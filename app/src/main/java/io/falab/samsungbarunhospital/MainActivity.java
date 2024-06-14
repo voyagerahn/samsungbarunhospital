@@ -42,13 +42,14 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        imageButtons = new ImageView[5];
+        imageButtons = new ImageView[6];
 
         imageButtons[0] = findViewById(R.id.imageButton1);
         imageButtons[1] = findViewById(R.id.imageButton2);
         imageButtons[2] = findViewById(R.id.imageButton3);
         imageButtons[3] = findViewById(R.id.imageButton4);
         imageButtons[4] = findViewById(R.id.imageButton5);
+        imageButtons[5] = findViewById(R.id.imageButton5);
 
         imageButtons[0].setOnClickListener(new View.OnClickListener() {
             @Override
@@ -80,6 +81,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 openWebPage("https://blog.naver.com/samsungbarunhosp");
+            }
+        });
+
+        imageButtons[5].setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openWebPage("https://blog.naver.com/samsungbarunhosp/223478437407");
             }
         });
 
