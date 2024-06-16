@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
         imageButtons[2] = findViewById(R.id.imageButton3);
         imageButtons[3] = findViewById(R.id.imageButton4);
         imageButtons[4] = findViewById(R.id.imageButton5);
-        imageButtons[5] = findViewById(R.id.imageButton5);
+        imageButtons[5] = findViewById(R.id.imageButton6);
 
         imageButtons[0].setOnClickListener(new View.OnClickListener() {
             @Override
