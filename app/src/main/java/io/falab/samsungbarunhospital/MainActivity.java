@@ -29,6 +29,8 @@ public class MainActivity extends AppCompatActivity {
 
     private Button buttonRight;
 
+    private Button buttonCenter;
+
     private long last_clicked_left = 0L;
 
     private long last_clicked_right = 0L;
@@ -186,6 +188,52 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        buttonCenter = findViewById(R.id.btnCenter);
+        buttonCenter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public synchronized void onClick(View v) {
+                long cur = System.currentTimeMillis();
+
+                if ((cur - last_clicked_right) < 500) {
+                    counterRight = counterRight + 1;
+                } else {
+                    counterRight = 1;
+                }
+
+                if (counterRight > 3) {
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                    final EditText input = new EditText(MainActivity.this);
+                    input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    builder.setView(input);
+                    builder.setTitle("음량 관리 실행");
+                    builder.setMessage("관리자 비밀번호를 입력해주세요.");
+                    builder.setCancelable(false);
+                    builder.setPositiveButton("확인",
+                            new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface dialog, int which) {
+                                    if ("0819".equals(input.getText().toString())) {
+                                        startNewActivity(MainActivity.this, "volumelock.vlocker");
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "비밀번호가 잘못되었습니다.", Toast.LENGTH_SHORT).show();
+                                    }
+
+                                }
+                            });
+                    builder.setNegativeButton("취소",
+                            new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface dialog, int which) {
+                                    last_clicked_right = 0;
+                                    counterRight = 0;
+                                }
+                            });
+                    builder.show();
+                } else {
+                    last_clicked_right = cur;
+                }
+
+            }
+        });
+        
         mViewFlipper = findViewById(R.id.view_flipper);
 
         Animation inAnim = new AlphaAnimation(0f, 1f);

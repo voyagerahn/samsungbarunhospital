@@ -25,6 +25,15 @@
         android:background="@android:color/transparent"
         android:padding="0dp"></Button>
 
+    <Button
+        android:id="@+id/btnCenter"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_margin="0dp"
+        android:background="@android:color/transparent"
+        android:padding="0dp"></Button>
+
     <ViewFlipper
         android:id="@+id/view_flipper"
         android:layout_width="match_parent"
