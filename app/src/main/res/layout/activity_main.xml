@@ -101,31 +101,21 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center_horizontal"
+        android:gravity="center"
         android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <ImageView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_centerHorizontal="true"
-            android:layout_marginVertical="100dp"
-            android:gravity="center|top"
-            android:orientation="vertical">
-
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:adjustViewBounds="true"
-                android:scaleType="center"
-                app:srcCompat="@drawable/samsungbarun" />
-
-        </LinearLayout>
+            android:layout_marginBottom="24dp"
+            android:adjustViewBounds="true"
+            android:scaleType="center"
+            app:srcCompat="@drawable/samsungbarun" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_centerHorizontal="true"
-            android:gravity="center|top">
+            android:gravity="center">
 
             <ImageView
                 android:id="@+id/imageButton1"
@@ -191,9 +181,19 @@
                 android:elevation="20dp"
                 android:scaleType="centerCrop"
                 android:layout_margin="20dp"
-                app:srcCompat="@drawable/blog_checkup" />
-        
+                app:srcCompat="@drawable/medical_cerificate" />
+
         </LinearLayout>
+
+        <!-- 벨 버튼: 아이콘 6개 아래 중앙 -->
+        <ImageView
+            android:id="@+id/bellButton"
+            android:layout_width="130dp"
+            android:layout_height="130dp"
+            android:layout_marginTop="20dp"
+            android:elevation="20dp"
+            android:scaleType="fitCenter"
+            app:srcCompat="@drawable/nurse_call" />
 
     </LinearLayout>
 </FrameLayout>
