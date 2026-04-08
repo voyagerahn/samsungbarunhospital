@@ -113,77 +113,11 @@
             app:srcCompat="@drawable/samsungbarun" />
 
         <LinearLayout
+            android:id="@+id/buttonContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center">
-
-            <ImageView
-                android:id="@+id/imageButton1"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/youtube" />
-
-            <ImageView
-                android:id="@+id/imageButton2"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/wavve_tv" />
-
-            <ImageView
-                android:id="@+id/imageButton3"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/home" />
-
-            <ImageView
-                android:id="@+id/imageButton4"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/www" />
-
-            <ImageView
-                android:id="@+id/imageButton5"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/blog" />
-
-            <ImageView
-                android:id="@+id/imageButton6"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/medical_cerificate" />
-
-        </LinearLayout>
+            android:gravity="center"
+            android:orientation="horizontal" />
 
         <!-- 벨 버튼: 아이콘 6개 아래 중앙 -->
         <ImageView

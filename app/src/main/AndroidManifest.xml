@@ -39,6 +39,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".ui.ButtonEditActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".ui.AlertActivity"
             android:exported="false"
             android:showOnLockScreen="true"

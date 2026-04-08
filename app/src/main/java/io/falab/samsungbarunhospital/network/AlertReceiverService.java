@@ -1,6 +1,5 @@
 package io.falab.samsungbarunhospital.network;
 
-import android.util.Log;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -28,7 +27,6 @@ import java.net.Socket;
 
 public class AlertReceiverService extends Service {
 
-    private static final String TAG                = "AlertReceiverService";
     private static final String SERVICE_CHANNEL_ID = "service_channel";
     private static final String ALERT_CHANNEL_ID   = "alert_channel";
 
@@ -53,13 +51,11 @@ public class AlertReceiverService extends Service {
     private void receiveLoop() {
         try {
             serverSocket = new ServerSocket(TcpSender.PORT);
-            Log.d(TAG, "TCP ServerSocket open on port " + TcpSender.PORT);
             while (running) {
                 Socket client = serverSocket.accept();
                 new Thread(() -> handleClient(client), "tcp-client").start();
             }
         } catch (Exception e) {
-            Log.e(TAG, "receiveLoop error: " + e.getMessage());
             if (running) {
                 mainHandler.postDelayed(() -> {
                     closeSocket();
@@ -76,13 +72,11 @@ public class AlertReceiverService extends Service {
             PrintWriter    out = new PrintWriter(client.getOutputStream(), true);
             String payload = in.readLine();
             String fromIp  = client.getInetAddress().getHostAddress();
-            Log.d(TAG, "Received from=" + fromIp + " payload=" + payload);
             if (payload != null && !payload.trim().isEmpty()) {
                 out.println("ACK"); // 수신 확인 즉시 응답
                 handleIncoming(payload.trim(), fromIp);
             }
         } catch (Exception e) {
-            Log.e(TAG, "handleClient error: " + e.getMessage());
         } finally {
             try { client.close(); } catch (Exception ignored) {}
         }
@@ -99,8 +93,7 @@ public class AlertReceiverService extends Service {
             message    = payload;
         }
 
-        Log.d(TAG, "handleIncoming tabletName=" + tabletName + " myName=" + AppSettings.getTabletName(this));
-        if (tabletName.equals(AppSettings.getTabletName(this))) return;
+
 
         CallItem item = new CallItem(tabletName, message);
         CallQueue.getInstance().add(item);

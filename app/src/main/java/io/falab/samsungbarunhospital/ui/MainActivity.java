@@ -5,7 +5,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
@@ -24,114 +25,71 @@ import android.widget.ViewFlipper;
 
 import io.falab.samsungbarunhospital.R;
 import io.falab.samsungbarunhospital.data.AppSettings;
+import io.falab.samsungbarunhospital.model.ButtonConfig;
 import io.falab.samsungbarunhospital.network.AlertReceiverService;
 import io.falab.samsungbarunhospital.network.TcpSender;
 
 import android.net.wifi.WifiManager;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MainActivity extends AppCompatActivity {
 
-    private ViewFlipper mViewFlipper;
-    private ImageView[] imageButtons;
-    private Button buttonLeft;
-    private Button buttonRight;
-    private Button buttonCenter;
-    private ImageView bellButton;
+    private ViewFlipper  mViewFlipper;
+    private LinearLayout buttonContainer;
+    private ImageView    bellButton;
 
-    private long last_clicked_left = 0L;
-    private long last_clicked_right = 0L;
+    private long last_clicked_left   = 0L;
+    private long last_clicked_right  = 0L;
     private long last_clicked_center = 0L;
-    private int counterLeft = 0;
-    private int counterRight = 0;
-    private int counterCenter = 0;
+    private int  counterLeft   = 0;
+    private int  counterRight  = 0;
+    private int  counterCenter = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        imageButtons = new ImageView[6];
-        imageButtons[0] = findViewById(R.id.imageButton1);
-        imageButtons[1] = findViewById(R.id.imageButton2);
-        imageButtons[2] = findViewById(R.id.imageButton3);
-        imageButtons[3] = findViewById(R.id.imageButton4);
-        imageButtons[4] = findViewById(R.id.imageButton5);
-        imageButtons[5] = findViewById(R.id.imageButton6);
+        buttonContainer = findViewById(R.id.buttonContainer);
+        bellButton      = findViewById(R.id.bellButton);
 
-        imageButtons[0].setOnClickListener(v -> startNewActivity(MainActivity.this, "com.google.android.youtube"));
-        imageButtons[1].setOnClickListener(v -> {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                startNewActivity(MainActivity.this, "com.movienet.touch.wavveon");
-            } else {
-                openWebPage("https://www.wavve.com");
-            }
-        });
-        imageButtons[2].setOnClickListener(v -> openWebPage("http://samsungbarunhospital.com?device=pc"));
-        imageButtons[3].setOnClickListener(v -> openWebPage("https://www.naver.com"));
-        imageButtons[4].setOnClickListener(v -> openWebPage("https://blog.naver.com/samsungbarunhosp"));
-        imageButtons[5].setOnClickListener(v -> openWebPage("https://docs.google.com/forms/d/e/1FAIpQLSe-_scHDukGeaFu0hdPvTikb_oOKXrSIrVmZklvtg7IoWZFtA/viewform?pli=1"));
-
-        // 좌측 투명 버튼: 4번 연속 클릭 → 비밀번호 → 관리자 메뉴
-        buttonLeft = findViewById(R.id.btnLeft);
-        buttonLeft.setOnClickListener(new View.OnClickListener() {
+        // 좌측 투명 버튼: 4번 연속 클릭 → 관리자 메뉴
+        findViewById(R.id.btnLeft).setOnClickListener(new View.OnClickListener() {
             @Override
             public synchronized void onClick(View v) {
                 long cur = System.currentTimeMillis();
-                if ((cur - last_clicked_left) < 500) {
-                    counterLeft++;
-                } else {
-                    counterLeft = 1;
-                }
-                if (counterLeft > 3) {
-                    showPasswordDialog("관리자 메뉴", () -> showAdminMenu());
-                } else {
-                    last_clicked_left = cur;
-                }
+                if ((cur - last_clicked_left) < 500) { counterLeft++; } else { counterLeft = 1; }
+                if (counterLeft > 3) { counterLeft = 0; showPasswordDialog("관리자 메뉴", () -> showAdminMenu()); }
+                else { last_clicked_left = cur; }
             }
         });
 
         // 우측 투명 버튼: 런처 실행
-        buttonRight = findViewById(R.id.btnRight);
-        buttonRight.setOnClickListener(new View.OnClickListener() {
+        findViewById(R.id.btnRight).setOnClickListener(new View.OnClickListener() {
             @Override
             public synchronized void onClick(View v) {
                 long cur = System.currentTimeMillis();
-                if ((cur - last_clicked_right) < 500) {
-                    counterRight++;
-                } else {
-                    counterRight = 1;
-                }
-                if (counterRight > 3) {
-                    showPasswordDialog("런처 실행", () -> startNewActivity(MainActivity.this, "com.android.launcher3"));
-                } else {
-                    last_clicked_right = cur;
-                }
+                if ((cur - last_clicked_right) < 500) { counterRight++; } else { counterRight = 1; }
+                if (counterRight > 3) { counterRight = 0; showPasswordDialog("런처 실행", () -> startNewActivity(MainActivity.this, "com.android.launcher3")); }
+                else { last_clicked_right = cur; }
             }
         });
 
         // 중앙 투명 버튼: 음량 잠금 앱
-        buttonCenter = findViewById(R.id.btnCenter);
-        buttonCenter.setOnClickListener(new View.OnClickListener() {
+        findViewById(R.id.btnCenter).setOnClickListener(new View.OnClickListener() {
             @Override
             public synchronized void onClick(View v) {
                 long cur = System.currentTimeMillis();
-                if ((cur - last_clicked_center) < 500) {
-                    counterCenter++;
-                } else {
-                    counterCenter = 1;
-                }
-                if (counterCenter > 3) {
-                    showPasswordDialog("음량 관리 실행", () -> startNewActivity(MainActivity.this, "volumelock.vlocker"));
-                } else {
-                    last_clicked_center = cur;
-                }
+                if ((cur - last_clicked_center) < 500) { counterCenter++; } else { counterCenter = 1; }
+                if (counterCenter > 3) { counterCenter = 0; showPasswordDialog("음량 관리 실행", () -> startNewActivity(MainActivity.this, "volumelock.vlocker")); }
+                else { last_clicked_center = cur; }
             }
         });
 
-        // 벨 버튼: 메시지 선택 팝업 표시
-        bellButton = findViewById(R.id.bellButton);
+        // 벨 버튼
         bellButton.setOnClickListener(v -> showCallMessageDialog());
 
         // UDP 수신 서비스 시작
@@ -142,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
 
+        // 배경 ViewFlipper
         mViewFlipper = findViewById(R.id.view_flipper);
         Animation inAnim = new AlphaAnimation(0f, 1f);
         inAnim.setDuration(300);
@@ -151,6 +110,52 @@ public class MainActivity extends AppCompatActivity {
         mViewFlipper.setOutAnimation(outAnim);
         mViewFlipper.startFlipping();
         mViewFlipper.setFlipInterval(60000);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        loadButtons(); // 관리자 설정 변경 후 돌아왔을 때 갱신
+    }
+
+    // 설정에서 읽어 버튼 동적 생성
+    private void loadButtons() {
+        buttonContainer.removeAllViews();
+        List<ButtonConfig> configs = AppSettings.getButtonConfigs(this);
+
+        for (ButtonConfig config : configs) {
+            ImageView iv = new ImageView(this);
+            int size   = dpToPx(122);
+            int margin = dpToPx(20);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(size, size);
+            params.setMargins(margin, 0, margin, 0);
+            iv.setLayoutParams(params);
+            iv.setAdjustViewBounds(true);
+            iv.setElevation(dpToPx(20));
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+
+            if (config.imagePath != null) {
+                Bitmap bm = BitmapFactory.decodeFile(config.imagePath);
+                if (bm != null) {
+                    iv.setImageBitmap(bm);
+                } else {
+                    setButtonImage(iv, config.drawableRes);
+                }
+            } else {
+                setButtonImage(iv, config.drawableRes);
+            }
+
+            final ButtonConfig finalConfig = config;
+            iv.setOnClickListener(v -> {
+                if (ButtonConfig.TYPE_APP.equals(finalConfig.type)) {
+                    startNewActivity(this, finalConfig.target);
+                } else {
+                    openWebPage(finalConfig.target);
+                }
+            });
+
+            buttonContainer.addView(iv);
+        }
     }
 
     // 비밀번호 다이얼로그 (공통)
@@ -170,24 +175,21 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         builder.setNegativeButton("취소", (dialog, which) -> {
-            last_clicked_left = 0;
-            counterLeft = 0;
-            last_clicked_right = 0;
-            counterRight = 0;
-            last_clicked_center = 0;
-            counterCenter = 0;
+            last_clicked_left = 0;   counterLeft   = 0;
+            last_clicked_right = 0;  counterRight  = 0;
+            last_clicked_center = 0; counterCenter = 0;
         });
         builder.show();
     }
 
-    // 관리자 메뉴 선택 다이얼로그
+    // 관리자 메뉴
     private void showAdminMenu() {
         String[] options = {"앱 관리자 설정", "안드로이드 시스템 설정"};
         new AlertDialog.Builder(this)
                 .setTitle("관리자 메뉴")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        startActivity(new Intent(this, AdminSettingsActivity.class)); // same package
+                        startActivity(new Intent(this, AdminSettingsActivity.class));
                     } else {
                         Intent intent = new Intent(android.provider.Settings.ACTION_SETTINGS);
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -200,13 +202,11 @@ public class MainActivity extends AppCompatActivity {
     // 간호사 호출 메시지 선택 팝업
     private void showCallMessageDialog() {
         List<String> messages = AppSettings.getCallMessages(this);
-
         if (messages.isEmpty()) {
             Toast.makeText(this, "관리자 설정에서 호출 메시지를 먼저 등록하세요.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // 팝업 레이아웃 구성
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(40, 20, 40, 20);
@@ -214,7 +214,7 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("어떤 도움이 필요하신가요?");
         title.setTextSize(20f);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(android.graphics.Color.WHITE);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, 0, 0, 24);
         layout.addView(title);
@@ -222,15 +222,14 @@ public class MainActivity extends AppCompatActivity {
         ScrollView scrollView = new ScrollView(this);
         scrollView.addView(layout);
 
-        // 실제 보여지는 다이얼로그를 배열로 참조 (람다 캡처용)
         AlertDialog[] dialogRef = new AlertDialog[1];
 
         for (String message : messages) {
             Button btn = new Button(this);
             btn.setText(message);
             btn.setTextSize(18f);
-            btn.setTextColor(Color.WHITE);
-            btn.setBackgroundColor(Color.parseColor("#1565C0"));
+            btn.setTextColor(android.graphics.Color.WHITE);
+            btn.setBackgroundColor(android.graphics.Color.parseColor("#1565C0"));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, 120);
             params.setMargins(0, 0, 0, 16);
@@ -245,8 +244,8 @@ public class MainActivity extends AppCompatActivity {
         Button btnCancel = new Button(this);
         btnCancel.setText("취소");
         btnCancel.setTextSize(16f);
-        btnCancel.setTextColor(Color.WHITE);
-        btnCancel.setBackgroundColor(Color.parseColor("#555555"));
+        btnCancel.setTextColor(android.graphics.Color.WHITE);
+        btnCancel.setBackgroundColor(android.graphics.Color.parseColor("#555555"));
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 100);
         cancelParams.setMargins(0, 8, 0, 0);
@@ -254,30 +253,39 @@ public class MainActivity extends AppCompatActivity {
         btnCancel.setOnClickListener(v -> dialogRef[0].dismiss());
         layout.addView(btnCancel);
 
-        dialogRef[0] = new AlertDialog.Builder(this)
-                .setView(scrollView)
-                .create();
+        dialogRef[0] = new AlertDialog.Builder(this).setView(scrollView).create();
         dialogRef[0].show();
     }
 
-    // TCP 전송: 전달 확인(ACK) 포함
+    // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
     private void sendCallMessage(String message) {
-        String nurseIp = AppSettings.getNurseIp(this);
-
-        if (nurseIp.equals(getLocalIpAddress())) {
-            Toast.makeText(this, "자기 자신을 호출할 수 없습니다.", Toast.LENGTH_SHORT).show();
+        List<String> targets = AppSettings.getNurseIps(this);
+        if (targets.isEmpty()) {
+            Toast.makeText(this, "등록된 간호사 태블릿이 없습니다.\n관리자 설정에서 IP를 추가하세요.", Toast.LENGTH_LONG).show();
             return;
         }
 
         String payload = AppSettings.getTabletName(this) + "|" + message;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
-        TcpSender.send(nurseIp, payload, success -> runOnUiThread(() -> {
-            if (success) {
-                Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
-            }
-        }));
+
+        AtomicInteger done    = new AtomicInteger(0);
+        AtomicInteger success = new AtomicInteger(0);
+        int total = targets.size();
+
+        for (String ip : targets) {
+            TcpSender.send(ip, payload, ok -> {
+                if (ok) success.incrementAndGet();
+                if (done.incrementAndGet() == total) {
+                    runOnUiThread(() -> {
+                        if (success.get() > 0) {
+                            Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }
+            });
+        }
     }
 
     private String getLocalIpAddress() {
@@ -310,5 +318,17 @@ public class MainActivity extends AppCompatActivity {
             intent.setData(Uri.parse("market://details?id=" + packageName));
             context.startActivity(intent);
         }
+    }
+
+    private void setButtonImage(ImageView iv, String drawableRes) {
+        if (drawableRes != null && !drawableRes.isEmpty()) {
+            int resId = getResources().getIdentifier(drawableRes, "drawable", getPackageName());
+            if (resId != 0) { iv.setImageResource(resId); return; }
+        }
+        iv.setBackgroundResource(R.drawable.ic_button_placeholder);
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 }
