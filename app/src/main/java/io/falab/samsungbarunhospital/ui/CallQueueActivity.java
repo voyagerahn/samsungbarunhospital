@@ -129,51 +129,67 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     }
 
     private View buildCallItemView(CallItem item) {
-        // 카드 컨테이너
+        // 카드 컨테이너 — 세로 중앙 정렬로 텍스트 길이가 달라져도 버튼이 항상 중앙
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(android.view.Gravity.CENTER_VERTICAL);
         card.setBackgroundColor(Color.parseColor("#1E1E3A"));
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         cardParams.setMargins(0, 0, 0, 12);
         card.setLayoutParams(cardParams);
-        card.setPadding(24, 20, 24, 20);
+        card.setPadding(32, 28, 32, 28);
 
-        // 텍스트 영역
+        // 좌측: 호실명 — 고정 폭(120dp)으로 긴 이름도 줄바꿈되어 메시지 영역 침범 안 함
+        TextView tvTablet = new TextView(this);
+        tvTablet.setText(item.tabletName);
+        tvTablet.setTextColor(Color.parseColor("#90CAF9"));
+        tvTablet.setTextSize(28f);
+        tvTablet.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvTablet.setGravity(android.view.Gravity.CENTER);
+        LinearLayout.LayoutParams tabletParams = new LinearLayout.LayoutParams(dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT);
+        tabletParams.setMarginEnd(dpToPx(16));
+        tvTablet.setLayoutParams(tabletParams);
+        card.addView(tvTablet);
+
+        // 구분선
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.parseColor("#444466"));
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(dpToPx(2), LinearLayout.LayoutParams.MATCH_PARENT);
+        divParams.setMarginEnd(dpToPx(16));
+        divider.setLayoutParams(divParams);
+        card.addView(divider);
+
+        // 우측: 메시지 + 시간 — weight=1 로 남은 공간 모두 차지, 긴 메시지는 자동 줄바꿈
         LinearLayout textArea = new LinearLayout(this);
         textArea.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         textArea.setLayoutParams(textParams);
 
-        TextView tvTablet = new TextView(this);
-        tvTablet.setText(item.tabletName);
-        tvTablet.setTextColor(Color.parseColor("#90CAF9"));
-        tvTablet.setTextSize(14f);
-        textArea.addView(tvTablet);
-
         TextView tvMsg = new TextView(this);
         tvMsg.setText(item.message);
         tvMsg.setTextColor(Color.WHITE);
-        tvMsg.setTextSize(20f);
+        tvMsg.setTextSize(28f);
+        tvMsg.setTypeface(null, android.graphics.Typeface.BOLD);
         textArea.addView(tvMsg);
 
         TextView tvTime = new TextView(this);
         tvTime.setText(timeFormat.format(new Date(item.timestamp)));
         tvTime.setTextColor(Color.parseColor("#888888"));
-        tvTime.setTextSize(12f);
+        tvTime.setTextSize(16f);
         textArea.addView(tvTime);
 
         card.addView(textArea);
 
-        // 확인 버튼
+        // 확인 버튼 — 고정 폭, 세로는 WRAP_CONTENT로 카드 높이에 자연스럽게 맞춤
         Button btnDone = new Button(this);
         btnDone.setText("확인");
         btnDone.setTextColor(Color.WHITE);
         btnDone.setBackgroundColor(Color.parseColor("#2E7D32"));
-        btnDone.setTextSize(16f);
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(140, 120);
+        btnDone.setTextSize(22f);
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dpToPx(110), LinearLayout.LayoutParams.WRAP_CONTENT);
         btnParams.setMarginStart(16);
         btnDone.setLayoutParams(btnParams);
         btnDone.setOnClickListener(v -> CallQueue.getInstance().markDone(item.id));
@@ -186,6 +202,9 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         alarmRunnable = new Runnable() {
             @Override
             public void run() {
+                // 30분 이상 미확인 호출 자동 만료
+                CallQueue.getInstance().purgeExpiredAndNotify();
+
                 if (CallQueue.getInstance().getWaitingCount() > 0) {
                     playAlarm();
                     alarmHandler.postDelayed(this, 10000);
@@ -227,5 +246,9 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     @Override
     public void onBackPressed() {
         finish();
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 }

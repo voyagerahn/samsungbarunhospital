@@ -41,6 +41,10 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout buttonContainer;
     private ImageView    bellButton;
 
+    private LinearLayout callStatusBanner;
+    private LinearLayout activeCallsContainer;
+    private final List<String> activeCallMessages = new ArrayList<>();
+
     private long last_clicked_left   = 0L;
     private long last_clicked_right  = 0L;
     private long last_clicked_center = 0L;
@@ -53,8 +57,10 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        buttonContainer = findViewById(R.id.buttonContainer);
-        bellButton      = findViewById(R.id.bellButton);
+        buttonContainer  = findViewById(R.id.buttonContainer);
+        bellButton       = findViewById(R.id.bellButton);
+        callStatusBanner     = findViewById(R.id.callStatusBanner);
+        activeCallsContainer = findViewById(R.id.activeCallsContainer);
 
         // 좌측 투명 버튼: 4번 연속 클릭 → 관리자 메뉴
         findViewById(R.id.btnLeft).setOnClickListener(new View.OnClickListener() {
@@ -265,7 +271,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        String payload = AppSettings.getTabletName(this) + "|" + message;
+        String tabletName = AppSettings.getTabletName(this);
+        String payload    = tabletName + "|" + message;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
 
         AtomicInteger done    = new AtomicInteger(0);
@@ -279,6 +286,8 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         if (success.get() > 0) {
                             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+                            activeCallMessages.add(message);
+                            refreshCallBanner();
                         } else {
                             Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
                         }
@@ -286,6 +295,54 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
+    }
+
+    private void refreshCallBanner() {
+        activeCallsContainer.removeAllViews();
+        if (activeCallMessages.isEmpty()) {
+            callStatusBanner.setVisibility(View.GONE);
+            return;
+        }
+        callStatusBanner.setVisibility(View.VISIBLE);
+        for (String msg : new ArrayList<>(activeCallMessages)) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowParams.setMargins(0, 0, 0, 8);
+            row.setLayoutParams(rowParams);
+
+            TextView tvMsg = new TextView(this);
+            tvMsg.setText(msg);
+            tvMsg.setTextColor(android.graphics.Color.parseColor("#90CAF9"));
+            tvMsg.setTextSize(16f);
+            LinearLayout.LayoutParams tvParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            tvMsg.setLayoutParams(tvParams);
+
+            Button btnCancel = new Button(this);
+            btnCancel.setText("취소");
+            btnCancel.setTextColor(android.graphics.Color.WHITE);
+            btnCancel.setBackgroundColor(android.graphics.Color.parseColor("#C62828"));
+            btnCancel.setTextSize(14f);
+            btnCancel.setPadding(dpToPx(16), dpToPx(6), dpToPx(16), dpToPx(6));
+            btnCancel.setOnClickListener(v -> cancelCall(msg));
+
+            row.addView(tvMsg);
+            row.addView(btnCancel);
+            activeCallsContainer.addView(row);
+        }
+    }
+
+    private void cancelCall(String message) {
+        String tabletName    = AppSettings.getTabletName(this);
+        String cancelPayload = "CANCEL|" + tabletName + "|" + message;
+        for (String ip : AppSettings.getNurseIps(this)) {
+            TcpSender.send(ip, cancelPayload, null);
+        }
+        activeCallMessages.remove(message);
+        refreshCallBanner();
+        Toast.makeText(this, "호출이 취소되었습니다.", Toast.LENGTH_SHORT).show();
     }
 
     private String getLocalIpAddress() {

@@ -98,6 +98,36 @@
     </ViewFlipper>
 
 
+    <!-- 호출 진행 중 배너 (하단 고정, 다른 UI 조작 가능) -->
+    <LinearLayout
+        android:id="@+id/callStatusBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#E6001A6B"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:elevation="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:text="🔔 간호사 호출 중"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <!-- 전송한 호출 목록이 동적으로 추가됨 -->
+        <LinearLayout
+            android:id="@+id/activeCallsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </LinearLayout>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"

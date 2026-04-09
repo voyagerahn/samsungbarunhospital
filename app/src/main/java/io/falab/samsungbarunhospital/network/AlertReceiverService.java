@@ -83,6 +83,15 @@ public class AlertReceiverService extends Service {
     }
 
     private void handleIncoming(String payload, String fromIp) {
+        // 환자 호출 취소 처리: "CANCEL|<TabletName>|<Message>"
+        if (payload.startsWith("CANCEL|")) {
+            String[] parts = payload.split("\\|", 3);
+            if (parts.length == 3) {
+                CallQueue.getInstance().cancelByTablet(parts[1].trim(), parts[2].trim());
+            }
+            return;
+        }
+
         String tabletName, message;
         if (payload.contains("|")) {
             String[] parts = payload.split("\\|", 2);
@@ -92,8 +101,6 @@ public class AlertReceiverService extends Service {
             tabletName = fromIp;
             message    = payload;
         }
-
-
 
         CallItem item = new CallItem(tabletName, message);
         CallQueue.getInstance().add(item);
