@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="32dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="관리자 설정"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <!-- 현재 기기 IP -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:text="이 기기의 IP 주소"
+            android:textColor="#90CAF9"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvCurrentIp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:background="#2D2D44"
+            android:padding="14dp"
+            android:text="—"
+            android:textColor="#FFD54F"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+
+        <!-- 간호사 IP 목록 -->
+        <LinearLayout
+            android:id="@+id/nurseIpSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:text="간호사 태블릿 IP 목록"
+                android:textColor="#90CAF9"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:text="호출을 받을 간호사 태블릿 IP를 추가하세요"
+                android:textColor="#888888"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/nurseIpListContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/btnAddNurseIp"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="32dp"
+                android:background="#37474F"
+                android:text="+ IP 추가"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+
+        </LinearLayout>
+
+        <!-- 알람 음량 (간호사 태블릿용) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="알람 음량 (간호사 태블릿 전용)"
+            android:textColor="#90CAF9"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="호출 수신 시 음소거 상태여도 이 음량으로 알람이 울립니다"
+            android:textColor="#888888"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <SeekBar
+                android:id="@+id/seekAlarmVolume"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="80" />
+
+            <TextView
+                android:id="@+id/tvAlarmVolumeValue"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="80%"
+                android:textColor="#FFD54F"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <!-- 태블릿 설정 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="태블릿 설정"
+            android:textColor="#90CAF9"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="이 태블릿의 이름 (예: 101호, 응급실 1번)"
+            android:textColor="#BBBBBB"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/etTabletName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:background="#2D2D44"
+            android:hint="예) 101호"
+            android:inputType="text"
+            android:padding="14dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#666688"
+            android:textSize="18sp" />
+
+        <!-- 비밀번호 변경 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="관리자 비밀번호 변경"
+            android:textColor="#90CAF9"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="비워두면 기존 비밀번호 유지"
+            android:textColor="#888888"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:background="#2D2D44"
+            android:hint="새 비밀번호 (숫자)"
+            android:inputType="numberPassword"
+            android:padding="14dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#666688"
+            android:textSize="18sp" />
+
+        <!-- 호출 메시지 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="호출 메시지 설정 (최대 10개)"
+            android:textColor="#90CAF9"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="입력한 메시지만 환자 화면에 버튼으로 표시됩니다"
+            android:textColor="#888888"
+            android:textSize="13sp" />
+
+        <EditText android:id="@+id/etMsg1"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 1"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg2"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 2"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg3"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 3"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg4"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 4"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg5"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 5"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg6"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 6"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg7"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 7"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg8"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 8"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg9"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 9"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+        <EditText android:id="@+id/etMsg10" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="40dp" android:background="#2D2D44" android:hint="메시지 10" android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+
+        <!-- 앱 버튼 관리 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="앱 버튼 관리 (최대 6개)"
+            android:textColor="#90CAF9"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="메인 화면에 표시할 버튼을 추가·편집·삭제합니다"
+            android:textColor="#888888"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/buttonListContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <Button
+            android:id="@+id/btnAddButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="32dp"
+            android:background="#2E7D32"
+            android:text="+ 버튼 추가"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:background="#1565C0"
+            android:text="저장"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:background="#444466"
+            android:text="저장하지 않고 나가기"
+            android:textColor="#CCCCCC"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+</ScrollView>

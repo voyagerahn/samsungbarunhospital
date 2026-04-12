@@ -98,102 +98,66 @@
     </ViewFlipper>
 
 
+    <!-- 호출 진행 중 배너 (하단 고정, 다른 UI 조작 가능) -->
+    <LinearLayout
+        android:id="@+id/callStatusBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#E6001A6B"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:elevation="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:text="🔔 간호사 호출 중"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <!-- 전송한 호출 목록이 동적으로 추가됨 -->
+        <LinearLayout
+            android:id="@+id/activeCallsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </LinearLayout>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center_horizontal"
+        android:gravity="center"
         android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <ImageView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_centerHorizontal="true"
-            android:layout_marginVertical="100dp"
-            android:gravity="center|top"
-            android:orientation="vertical">
-
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:adjustViewBounds="true"
-                android:scaleType="center"
-                app:srcCompat="@drawable/samsungbarun" />
-
-        </LinearLayout>
+            android:layout_marginBottom="24dp"
+            android:adjustViewBounds="true"
+            android:scaleType="center"
+            app:srcCompat="@drawable/samsungbarun" />
 
         <LinearLayout
+            android:id="@+id/buttonContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_centerHorizontal="true"
-            android:gravity="center|top">
+            android:gravity="center"
+            android:orientation="horizontal" />
 
-            <ImageView
-                android:id="@+id/imageButton1"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/youtube" />
-
-            <ImageView
-                android:id="@+id/imageButton2"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/wavve_tv" />
-
-            <ImageView
-                android:id="@+id/imageButton3"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/home" />
-
-            <ImageView
-                android:id="@+id/imageButton4"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/www" />
-
-            <ImageView
-                android:id="@+id/imageButton5"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/blog" />
-
-            <ImageView
-                android:id="@+id/imageButton6"
-                android:layout_width="122dp"
-                android:layout_height="122dp"
-                android:layout_marginHorizontal="60dp"
-                android:adjustViewBounds="true"
-                android:elevation="20dp"
-                android:scaleType="centerCrop"
-                android:layout_margin="20dp"
-                app:srcCompat="@drawable/blog_checkup" />
-        
-        </LinearLayout>
+        <!-- 벨 버튼: 아이콘 6개 아래 중앙 -->
+        <ImageView
+            android:id="@+id/bellButton"
+            android:layout_width="130dp"
+            android:layout_height="130dp"
+            android:layout_marginTop="20dp"
+            android:elevation="20dp"
+            android:scaleType="fitCenter"
+            app:srcCompat="@drawable/nurse_call" />
 
     </LinearLayout>
 </FrameLayout>
