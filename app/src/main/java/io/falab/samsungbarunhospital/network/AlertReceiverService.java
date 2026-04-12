@@ -30,6 +30,22 @@ public class AlertReceiverService extends Service {
     private static final String SERVICE_CHANNEL_ID = "service_channel";
     private static final String ALERT_CHANNEL_ID   = "alert_channel";
 
+    /** 간호사 확인 수신 시 MainActivity에 전달하는 콜백 (환자 태블릿용) */
+    public interface ConfirmListener {
+        void onCallConfirmed(String tabletName, String message);
+    }
+    private static volatile ConfirmListener confirmListener;
+    public static void setConfirmListener(ConfirmListener l) { confirmListener = l; }
+
+    /** 알림 갱신용 정적 인스턴스 — CallQueueActivity.onStop()에서 호출 */
+    private static volatile AlertReceiverService instance;
+    public static void refreshNotification() {
+        AlertReceiverService svc = instance;
+        if (svc != null) {
+            svc.mainHandler.post(svc::updateNotificationBadge);
+        }
+    }
+
     private ServerSocket     serverSocket;
     private volatile boolean running = true;
     private final Handler    mainHandler = new Handler(Looper.getMainLooper());
@@ -37,6 +53,7 @@ public class AlertReceiverService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         createNotificationChannels();
         startForeground(1, buildServiceNotification());
     }
@@ -83,11 +100,22 @@ public class AlertReceiverService extends Service {
     }
 
     private void handleIncoming(String payload, String fromIp) {
-        // 환자 호출 취소 처리: "CANCEL|<TabletName>|<Message>"
+        // 환자 호출 취소: "CANCEL|<TabletName>|<Message>"
         if (payload.startsWith("CANCEL|")) {
             String[] parts = payload.split("\\|", 3);
             if (parts.length == 3) {
                 CallQueue.getInstance().cancelByTablet(parts[1].trim(), parts[2].trim());
+            }
+            return;
+        }
+
+        // 간호사 확인 응답: "CONFIRMED|<TabletName>|<Message>" (환자 태블릿이 수신)
+        if (payload.startsWith("CONFIRMED|")) {
+            String[] parts = payload.split("\\|", 3);
+            if (parts.length == 3 && confirmListener != null) {
+                String tabletName = parts[1].trim();
+                String message    = parts[2].trim();
+                mainHandler.post(() -> confirmListener.onCallConfirmed(tabletName, message));
             }
             return;
         }
@@ -102,7 +130,7 @@ public class AlertReceiverService extends Service {
             message    = payload;
         }
 
-        CallItem item = new CallItem(tabletName, message);
+        CallItem item = new CallItem(tabletName, message, fromIp);
         CallQueue.getInstance().add(item);
 
         mainHandler.post(() -> {
@@ -119,6 +147,11 @@ public class AlertReceiverService extends Service {
         int count = CallQueue.getInstance().getWaitingCount();
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm == null) return;
+
+        if (count == 0) {
+            nm.cancel(2);
+            return;
+        }
 
         Intent intent = new Intent(this, CallQueueActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -139,6 +172,7 @@ public class AlertReceiverService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        instance = null;
         running = false;
         closeSocket();
     }

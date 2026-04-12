@@ -1,10 +1,14 @@
 package io.falab.samsungbarunhospital.ui;
 
 import android.graphics.Color;
-import android.media.Ringtone;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -14,11 +18,11 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
 import io.falab.samsungbarunhospital.R;
+import io.falab.samsungbarunhospital.data.AppSettings;
 import io.falab.samsungbarunhospital.data.CallQueue;
 import io.falab.samsungbarunhospital.model.CallItem;
-
-import android.os.Handler;
-import android.os.Looper;
+import io.falab.samsungbarunhospital.network.AlertReceiverService;
+import io.falab.samsungbarunhospital.network.TcpSender;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -30,17 +34,33 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     // AlertReceiverService에서 이미 실행 중인지 확인용 플래그
     public static volatile boolean isRunning = false;
 
-    private LinearLayout callListContainer;
+    // Header
     private TextView tvCount;
+
+    // Content split layout (hidden when empty)
+    private LinearLayout contentLayout;
+
+    // Left panel — primary (oldest / most urgent) call
+    private TextView tvPrimaryRoom;
+    private TextView tvPrimaryMsg;
+    private TextView tvPrimaryTime;
+
+    // Right panel — full list
+    private LinearLayout callListContainer;
+
+    // Empty state
     private TextView tvEmpty;
-    private Ringtone ringtone;
-    private android.net.Uri ringtoneUri;
 
-    private final SimpleDateFormat timeFormat =
-            new SimpleDateFormat("HH:mm:ss", Locale.KOREA);
+    // Currently displayed primary call
+    private CallItem currentPrimary;
 
-    private final Handler alarmHandler = new Handler(Looper.getMainLooper());
-    private Runnable alarmRunnable;
+    private MediaPlayer  alarmPlayer;
+    private AudioManager audioManager;
+    private int          savedAlarmVolume = -1;
+
+    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss", Locale.KOREA);
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private Runnable tickRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,21 +76,19 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
         setContentView(R.layout.activity_call_queue);
 
-        callListContainer = findViewById(R.id.callListContainer);
         tvCount           = findViewById(R.id.tvCount);
+        contentLayout     = findViewById(R.id.contentLayout);
+        tvPrimaryRoom     = findViewById(R.id.tvPrimaryRoom);
+        tvPrimaryMsg      = findViewById(R.id.tvPrimaryMsg);
+        tvPrimaryTime     = findViewById(R.id.tvPrimaryTime);
+        callListContainer = findViewById(R.id.callListContainer);
         tvEmpty           = findViewById(R.id.tvEmpty);
-
-        // 벨소리 URI를 한 번만 결정
-        ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-        if (ringtoneUri == null) {
-            ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-        }
-        ringtone = RingtoneManager.getRingtone(this, ringtoneUri);
+        audioManager      = (AudioManager) getSystemService(AUDIO_SERVICE);
 
         findViewById(R.id.btnClose).setOnClickListener(v -> finish());
 
         playAlarm();
-        startRepeatingAlarm();
+        startTick();
         CallQueue.getInstance().addListener(this);
         renderList();
     }
@@ -79,13 +97,15 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     protected void onStart() {
         super.onStart();
         isRunning = true;
-        renderList(); // 화면 복귀 시 최신 상태 반영
+        renderList();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         isRunning = false;
+        // 대기 호출이 남아있으면 notification을 현재 카운트로 갱신하여 탭 복귀 가능하게 유지
+        AlertReceiverService.refreshNotification();
     }
 
     @Override
@@ -93,7 +113,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         super.onDestroy();
         isRunning = false;
         stopAlarm();
-        stopRepeatingAlarm();
+        stopTick();
         CallQueue.getInstance().removeListener(this);
     }
 
@@ -103,75 +123,109 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         renderList();
         if (CallQueue.getInstance().getWaitingCount() == 0) {
             stopAlarm();
-            stopRepeatingAlarm();
+            stopTick();
             finish();
         }
     }
 
     private void renderList() {
         List<CallItem> items = CallQueue.getInstance().getAll();
-        callListContainer.removeAllViews();
 
         if (items.isEmpty()) {
+            contentLayout.setVisibility(View.GONE);
             tvEmpty.setVisibility(View.VISIBLE);
-            callListContainer.setVisibility(View.GONE);
             tvCount.setText("대기 0건");
+            currentPrimary = null;
             return;
         }
 
         tvEmpty.setVisibility(View.GONE);
-        callListContainer.setVisibility(View.VISIBLE);
+        contentLayout.setVisibility(View.VISIBLE);
         tvCount.setText("대기 " + items.size() + "건");
 
+        // Primary = 가장 오래된 호출 = 리스트 마지막 (items는 최신순, index 0이 최신)
+        currentPrimary = items.get(items.size() - 1);
+        tvPrimaryRoom.setText(currentPrimary.tabletName);
+        tvPrimaryMsg.setText(currentPrimary.message);
+        tvPrimaryTime.setText(formatElapsed(currentPrimary.timestamp));
+
+        // 우측 전체 목록 재구성
+        callListContainer.removeAllViews();
         for (CallItem item : items) {
-            callListContainer.addView(buildCallItemView(item));
+            boolean isPrimary = item.id.equals(currentPrimary.id);
+            callListContainer.addView(buildListItemView(item, isPrimary));
         }
     }
 
-    private View buildCallItemView(CallItem item) {
-        // 카드 컨테이너 — 세로 중앙 정렬로 텍스트 길이가 달라져도 버튼이 항상 중앙
+    private void updatePrimaryTime() {
+        if (currentPrimary != null && tvPrimaryTime != null) {
+            tvPrimaryTime.setText(formatElapsed(currentPrimary.timestamp));
+        }
+    }
+
+    private String formatElapsed(long timestamp) {
+        long elapsed = System.currentTimeMillis() - timestamp;
+        long seconds = elapsed / 1000;
+        if (seconds < 60) return "방금 전";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + "분 대기 중";
+        long hours   = minutes / 60;
+        long mins    = minutes % 60;
+        return hours + "시간 " + mins + "분 대기 중";
+    }
+
+    private void confirmCall(CallItem item) {
+        CallQueue.getInstance().markDone(item.id);
+        if (item.senderIp != null && !item.senderIp.isEmpty()) {
+            TcpSender.send(item.senderIp, "CONFIRMED|" + item.tabletName + "|" + item.message, null);
+        }
+    }
+
+    private View buildListItemView(CallItem item, boolean isPrimary) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        card.setBackgroundColor(Color.parseColor("#1E1E3A"));
+        card.setBackgroundColor(isPrimary
+                ? Color.parseColor("#1A1500")   // 황금빛 강조 배경
+                : Color.parseColor("#1E1E3A"));
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        cardParams.setMargins(0, 0, 0, 12);
+        cardParams.setMargins(0, 0, 0, 10);
         card.setLayoutParams(cardParams);
-        card.setPadding(32, 28, 32, 28);
+        card.setPadding(24, 20, 24, 20);
 
-        // 좌측: 호실명 — 고정 폭(120dp)으로 긴 이름도 줄바꿈되어 메시지 영역 침범 안 함
-        TextView tvTablet = new TextView(this);
-        tvTablet.setText(item.tabletName);
-        tvTablet.setTextColor(Color.parseColor("#90CAF9"));
-        tvTablet.setTextSize(28f);
-        tvTablet.setTypeface(null, android.graphics.Typeface.BOLD);
-        tvTablet.setGravity(android.view.Gravity.CENTER);
-        LinearLayout.LayoutParams tabletParams = new LinearLayout.LayoutParams(dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT);
-        tabletParams.setMarginEnd(dpToPx(16));
-        tvTablet.setLayoutParams(tabletParams);
-        card.addView(tvTablet);
+        // 호실명 (고정 너비 — 긴 이름도 줄바꿈되어 메시지 침범 안 함)
+        TextView tvRoom = new TextView(this);
+        tvRoom.setText(item.tabletName);
+        tvRoom.setTextColor(isPrimary
+                ? Color.parseColor("#FFD54F")
+                : Color.parseColor("#90CAF9"));
+        tvRoom.setTextSize(26f);
+        tvRoom.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvRoom.setGravity(android.view.Gravity.CENTER);
+        LinearLayout.LayoutParams roomParams = new LinearLayout.LayoutParams(dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT);
+        roomParams.setMarginEnd(dpToPx(14));
+        tvRoom.setLayoutParams(roomParams);
+        card.addView(tvRoom);
 
         // 구분선
         View divider = new View(this);
         divider.setBackgroundColor(Color.parseColor("#444466"));
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(dpToPx(2), LinearLayout.LayoutParams.MATCH_PARENT);
-        divParams.setMarginEnd(dpToPx(16));
+        divParams.setMarginEnd(dpToPx(14));
         divider.setLayoutParams(divParams);
         card.addView(divider);
 
-        // 우측: 메시지 + 시간 — weight=1 로 남은 공간 모두 차지, 긴 메시지는 자동 줄바꿈
+        // 메시지 + 시간 (남은 공간 모두 차지, 자동 줄바꿈)
         LinearLayout textArea = new LinearLayout(this);
         textArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        textArea.setLayoutParams(textParams);
+        textArea.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView tvMsg = new TextView(this);
         tvMsg.setText(item.message);
         tvMsg.setTextColor(Color.WHITE);
-        tvMsg.setTextSize(28f);
+        tvMsg.setTextSize(26f);
         tvMsg.setTypeface(null, android.graphics.Typeface.BOLD);
         textArea.addView(tvMsg);
 
@@ -183,50 +237,71 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
         card.addView(textArea);
 
-        // 확인 버튼 — 고정 폭, 세로는 WRAP_CONTENT로 카드 높이에 자연스럽게 맞춤
+        // 확인 버튼
         Button btnDone = new Button(this);
         btnDone.setText("확인");
         btnDone.setTextColor(Color.WHITE);
         btnDone.setBackgroundColor(Color.parseColor("#2E7D32"));
-        btnDone.setTextSize(22f);
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dpToPx(110), LinearLayout.LayoutParams.WRAP_CONTENT);
-        btnParams.setMarginStart(16);
+        btnDone.setTextSize(18f);
+        btnDone.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dpToPx(90), LinearLayout.LayoutParams.WRAP_CONTENT);
+        btnParams.setMarginStart(12);
         btnDone.setLayoutParams(btnParams);
-        btnDone.setOnClickListener(v -> CallQueue.getInstance().markDone(item.id));
+        btnDone.setOnClickListener(v -> confirmCall(item));
         card.addView(btnDone);
 
         return card;
     }
 
-    private void startRepeatingAlarm() {
-        alarmRunnable = new Runnable() {
+    private void startTick() {
+        tickRunnable = new Runnable() {
             @Override
             public void run() {
-                // 30분 이상 미확인 호출 자동 만료
                 CallQueue.getInstance().purgeExpiredAndNotify();
-
+                updatePrimaryTime();
                 if (CallQueue.getInstance().getWaitingCount() > 0) {
-                    playAlarm();
-                    alarmHandler.postDelayed(this, 10000);
+                    mainHandler.postDelayed(this, 10000);
                 }
             }
         };
-        alarmHandler.postDelayed(alarmRunnable, 10000);
+        mainHandler.postDelayed(tickRunnable, 10000);
     }
 
-    private void stopRepeatingAlarm() {
-        if (alarmRunnable != null) {
-            alarmHandler.removeCallbacks(alarmRunnable);
-            alarmRunnable = null;
+    private void stopTick() {
+        if (tickRunnable != null) {
+            mainHandler.removeCallbacks(tickRunnable);
+            tickRunnable = null;
         }
     }
 
     private void playAlarm() {
+        if (alarmPlayer != null) return;
         try {
-            if (ringtone == null) {
-                ringtone = RingtoneManager.getRingtone(this, ringtoneUri);
-            }
-            if (ringtone != null) ringtone.play();
+            Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (uri == null) uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+
+            // MODIFY_AUDIO_SETTINGS 권한으로 알람 스트림 볼륨 강제 설정
+            // (음소거/진동 모드에서도 STREAM_ALARM은 별도 채널이라 소리 남)
+            int maxVol    = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+            int targetVol = (int) (maxVol * AppSettings.getAlarmVolume(this) / 100.0f);
+            savedAlarmVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM);
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, Math.max(1, targetVol), 0);
+
+            alarmPlayer = new MediaPlayer();
+            alarmPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)          // 무음/진동 모드 우회
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+            alarmPlayer.setDataSource(this, uri);
+            alarmPlayer.setLooping(true);
+
+            // prepareAsync: 메인 스레드 블로킹 없이 준비 후 자동 시작
+            alarmPlayer.setOnPreparedListener(MediaPlayer::start);
+            alarmPlayer.setOnErrorListener((mp, what, extra) -> {
+                stopAlarm();
+                return true;
+            });
+            alarmPlayer.prepareAsync();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -234,9 +309,14 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
     private void stopAlarm() {
         try {
-            if (ringtone != null) {
-                ringtone.stop(); // isPlaying() 미신뢰 — null 체크만 하고 무조건 stop
-                ringtone = null;
+            if (alarmPlayer != null) {
+                alarmPlayer.stop();
+                alarmPlayer.release();
+                alarmPlayer = null;
+            }
+            if (savedAlarmVolume >= 0 && audioManager != null) {
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0);
+                savedAlarmVolume = -1;
             }
         } catch (Exception e) {
             e.printStackTrace();

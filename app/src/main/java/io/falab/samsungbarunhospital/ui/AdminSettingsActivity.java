@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,6 +34,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private LinearLayout buttonListContainer;
     private LinearLayout nurseIpListContainer;
     private TextView     tvCurrentIp;
+    private SeekBar      seekAlarmVolume;
+    private TextView     tvAlarmVolumeValue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +55,20 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 findViewById(R.id.etMsg7), findViewById(R.id.etMsg8),
                 findViewById(R.id.etMsg9), findViewById(R.id.etMsg10)
         };
+
+        seekAlarmVolume    = findViewById(R.id.seekAlarmVolume);
+        tvAlarmVolumeValue = findViewById(R.id.tvAlarmVolumeValue);
+
+        int savedVol = AppSettings.getAlarmVolume(this);
+        seekAlarmVolume.setProgress(savedVol);
+        tvAlarmVolumeValue.setText(savedVol + "%");
+        seekAlarmVolume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                tvAlarmVolumeValue.setText(progress + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
 
         // 현재 IP 표시
         tvCurrentIp.setText(getLocalIpAddress());
@@ -97,6 +114,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
             String pw = etPassword.getText().toString().trim();
             AppSettings.save(this, name, messages, pw);
+            AppSettings.saveAlarmVolume(this, seekAlarmVolume.getProgress());
             Toast.makeText(this, "저장되었습니다.", Toast.LENGTH_SHORT).show();
             finish();
         });

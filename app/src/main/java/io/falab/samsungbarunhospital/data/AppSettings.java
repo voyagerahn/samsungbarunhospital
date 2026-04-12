@@ -20,8 +20,10 @@ public class AppSettings {
     private static final String KEY_PASSWORD        = "admin_password";
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
+    private static final String KEY_ALARM_VOLUME     = "alarm_volume";
 
-    private static final String DEFAULT_PASSWORD = "0819";
+    private static final String DEFAULT_PASSWORD  = "0819";
+    private static final int    DEFAULT_ALARM_VOL = 80; // 기본 80%
 
     public static final int MAX_BUTTONS = 6;
 
@@ -32,6 +34,15 @@ public class AppSettings {
             "화장실 도움이 필요해요",
             "일반 호출"
     );
+
+    // ── 알람 음량 (0~100%) ──────────────────────────────────────────────────
+    public static int getAlarmVolume(Context ctx) {
+        return prefs(ctx).getInt(KEY_ALARM_VOLUME, DEFAULT_ALARM_VOL);
+    }
+
+    public static void saveAlarmVolume(Context ctx, int percent) {
+        prefs(ctx).edit().putInt(KEY_ALARM_VOLUME, Math.max(0, Math.min(100, percent))).apply();
+    }
 
     // ── 비밀번호 ─────────────────────────────────────────────────────────────
     public static String getPassword(Context ctx) {

@@ -29,6 +29,9 @@ import io.falab.samsungbarunhospital.model.ButtonConfig;
 import io.falab.samsungbarunhospital.network.AlertReceiverService;
 import io.falab.samsungbarunhospital.network.TcpSender;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import android.net.wifi.WifiManager;
 
 import java.util.ArrayList;
@@ -43,7 +46,9 @@ public class MainActivity extends AppCompatActivity {
 
     private LinearLayout callStatusBanner;
     private LinearLayout activeCallsContainer;
-    private final List<String> activeCallMessages = new ArrayList<>();
+    private final List<String>       activeCallMessages  = new ArrayList<>();
+    private final List<String>       confirmedMessages   = new ArrayList<>(); // 완료 표시 중인 메시지
+    private final Handler            bannerHandler       = new Handler(Looper.getMainLooper());
 
     private long last_clicked_left   = 0L;
     private long last_clicked_right  = 0L;
@@ -121,7 +126,24 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        loadButtons(); // 관리자 설정 변경 후 돌아왔을 때 갱신
+        loadButtons();
+        AlertReceiverService.setConfirmListener((tabletName, message) -> {
+            // 해당 메시지를 활성 목록에서 제거하고 "완료" 상태로 잠깐 표시
+            activeCallMessages.remove(message);
+            confirmedMessages.add(message);
+            refreshCallBanner();
+            // 2초 후 완료 항목도 제거
+            bannerHandler.postDelayed(() -> {
+                confirmedMessages.remove(message);
+                refreshCallBanner();
+            }, 2000);
+        });
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        AlertReceiverService.setConfirmListener(null);
     }
 
     // 설정에서 읽어 버튼 동적 생성
@@ -299,11 +321,31 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshCallBanner() {
         activeCallsContainer.removeAllViews();
-        if (activeCallMessages.isEmpty()) {
+        if (activeCallMessages.isEmpty() && confirmedMessages.isEmpty()) {
             callStatusBanner.setVisibility(View.GONE);
             return;
         }
         callStatusBanner.setVisibility(View.VISIBLE);
+
+        // 완료된 항목 먼저 표시
+        for (String msg : new ArrayList<>(confirmedMessages)) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowParams.setMargins(0, 0, 0, 8);
+            row.setLayoutParams(rowParams);
+
+            TextView tvMsg = new TextView(this);
+            tvMsg.setText("✓ 호출 완료: " + msg);
+            tvMsg.setTextColor(android.graphics.Color.parseColor("#A5D6A7"));
+            tvMsg.setTextSize(16f);
+            row.addView(tvMsg);
+            activeCallsContainer.addView(row);
+        }
+
+        // 대기 중인 항목
         for (String msg : new ArrayList<>(activeCallMessages)) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
