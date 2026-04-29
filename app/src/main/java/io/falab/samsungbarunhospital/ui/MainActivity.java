@@ -46,9 +46,12 @@ public class MainActivity extends AppCompatActivity {
 
     private LinearLayout callStatusBanner;
     private LinearLayout activeCallsContainer;
-    private final List<String>       activeCallMessages  = new ArrayList<>();
+    // 호출 추적: 인덱스 i → (UUID, 메시지). UUID로 간호사쪽과 1:1 매칭
+    private final List<String>       activeCallIds       = new ArrayList<>();
+    private final List<String>       activeCallMsgs      = new ArrayList<>();
     private final List<String>       confirmedMessages   = new ArrayList<>(); // 완료 표시 중인 메시지
     private final Handler            bannerHandler       = new Handler(Looper.getMainLooper());
+    private final List<Bitmap>       loadedBitmaps       = new ArrayList<>(); // 비트맵 추적 → onDestroy에서 recycle
 
     private long last_clicked_left   = 0L;
     private long last_clicked_right  = 0L;
@@ -128,8 +131,12 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         loadButtons();
         AlertReceiverService.setConfirmListener((tabletName, message) -> {
-            // 해당 메시지를 활성 목록에서 제거하고 "완료" 상태로 잠깐 표시
-            activeCallMessages.remove(message);
+            // 메시지 일치하는 첫 번째 항목 제거 (간호사 CONFIRMED 패킷은 UUID 없이 메시지만 포함)
+            int idx = activeCallMsgs.indexOf(message);
+            if (idx >= 0) {
+                activeCallIds.remove(idx);
+                activeCallMsgs.remove(idx);
+            }
             confirmedMessages.add(message);
             refreshCallBanner();
             // 2초 후 완료 항목도 제거
@@ -146,8 +153,25 @@ public class MainActivity extends AppCompatActivity {
         AlertReceiverService.setConfirmListener(null);
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 메시지 큐에 남은 지연 콜백 제거 — Activity 참조 누수 방지
+        bannerHandler.removeCallbacksAndMessages(null);
+        // 남은 비트맵 해제
+        for (Bitmap bm : loadedBitmaps) {
+            if (bm != null && !bm.isRecycled()) bm.recycle();
+        }
+        loadedBitmaps.clear();
+    }
+
     // 설정에서 읽어 버튼 동적 생성
     private void loadButtons() {
+        // 이전 비트맵 즉시 해제 (GC 의존 제거)
+        for (Bitmap bm : loadedBitmaps) {
+            if (bm != null && !bm.isRecycled()) bm.recycle();
+        }
+        loadedBitmaps.clear();
         buttonContainer.removeAllViews();
         List<ButtonConfig> configs = AppSettings.getButtonConfigs(this);
 
@@ -166,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
                 Bitmap bm = BitmapFactory.decodeFile(config.imagePath);
                 if (bm != null) {
                     iv.setImageBitmap(bm);
+                    loadedBitmaps.add(bm); // 추적 목록에 등록
                 } else {
                     setButtonImage(iv, config.drawableRes);
                 }
@@ -294,7 +319,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String tabletName = AppSettings.getTabletName(this);
-        String payload    = tabletName + "|" + message;
+        // 환자 측에서 UUID 생성 → payload에 포함 → 취소 시 1:1 매칭 가능
+        String callId  = java.util.UUID.randomUUID().toString();
+        String payload = tabletName + "|" + message + "|" + callId;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
 
         AtomicInteger done    = new AtomicInteger(0);
@@ -308,7 +335,8 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         if (success.get() > 0) {
                             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
-                            activeCallMessages.add(message);
+                            activeCallIds.add(callId);
+                            activeCallMsgs.add(message);
                             refreshCallBanner();
                         } else {
                             Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
@@ -321,7 +349,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshCallBanner() {
         activeCallsContainer.removeAllViews();
-        if (activeCallMessages.isEmpty() && confirmedMessages.isEmpty()) {
+        if (activeCallIds.isEmpty() && confirmedMessages.isEmpty()) {
             callStatusBanner.setVisibility(View.GONE);
             return;
         }
@@ -345,8 +373,13 @@ public class MainActivity extends AppCompatActivity {
             activeCallsContainer.addView(row);
         }
 
-        // 대기 중인 항목
-        for (String msg : new ArrayList<>(activeCallMessages)) {
+        // 대기 중인 항목 (스냅샷으로 복사 후 순회 — 도중 remove 방지)
+        List<String> idSnapshot  = new ArrayList<>(activeCallIds);
+        List<String> msgSnapshot = new ArrayList<>(activeCallMsgs);
+        for (int i = 0; i < idSnapshot.size(); i++) {
+            final String callId = idSnapshot.get(i);
+            final String msg    = msgSnapshot.get(i);
+
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -368,7 +401,7 @@ public class MainActivity extends AppCompatActivity {
             btnCancel.setBackgroundColor(android.graphics.Color.parseColor("#C62828"));
             btnCancel.setTextSize(14f);
             btnCancel.setPadding(dpToPx(16), dpToPx(6), dpToPx(16), dpToPx(6));
-            btnCancel.setOnClickListener(v -> cancelCall(msg));
+            btnCancel.setOnClickListener(v -> cancelCall(callId, msg));
 
             row.addView(tvMsg);
             row.addView(btnCancel);
@@ -376,13 +409,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void cancelCall(String message) {
-        String tabletName    = AppSettings.getTabletName(this);
-        String cancelPayload = "CANCEL|" + tabletName + "|" + message;
+    private void cancelCall(String callId, String message) {
+        String cancelPayload = "CANCEL|" + callId;
         for (String ip : AppSettings.getNurseIps(this)) {
             TcpSender.send(ip, cancelPayload, null);
         }
-        activeCallMessages.remove(message);
+        int idx = activeCallIds.indexOf(callId);
+        if (idx >= 0) {
+            activeCallIds.remove(idx);
+            activeCallMsgs.remove(idx);
+        }
         refreshCallBanner();
         Toast.makeText(this, "호출이 취소되었습니다.", Toast.LENGTH_SHORT).show();
     }

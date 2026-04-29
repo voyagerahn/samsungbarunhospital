@@ -14,7 +14,6 @@ import android.os.Looper;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
-import io.falab.samsungbarunhospital.data.AppSettings;
 import io.falab.samsungbarunhospital.data.CallQueue;
 import io.falab.samsungbarunhospital.model.CallItem;
 import io.falab.samsungbarunhospital.ui.CallQueueActivity;
@@ -46,7 +45,7 @@ public class AlertReceiverService extends Service {
         }
     }
 
-    private ServerSocket     serverSocket;
+    private volatile ServerSocket serverSocket;
     private volatile boolean running = true;
     private final Handler    mainHandler = new Handler(Looper.getMainLooper());
 
@@ -100,11 +99,11 @@ public class AlertReceiverService extends Service {
     }
 
     private void handleIncoming(String payload, String fromIp) {
-        // 환자 호출 취소: "CANCEL|<TabletName>|<Message>"
+        // 환자 호출 취소: "CANCEL|<callId>"
         if (payload.startsWith("CANCEL|")) {
-            String[] parts = payload.split("\\|", 3);
-            if (parts.length == 3) {
-                CallQueue.getInstance().cancelByTablet(parts[1].trim(), parts[2].trim());
+            String[] parts = payload.split("\\|", 2);
+            if (parts.length == 2) {
+                CallQueue.getInstance().cancelById(parts[1].trim());
             }
             return;
         }
@@ -120,17 +119,26 @@ public class AlertReceiverService extends Service {
             return;
         }
 
-        String tabletName, message;
-        if (payload.contains("|")) {
-            String[] parts = payload.split("\\|", 2);
+        // 환자 호출: "TabletName|Message|CallId" 또는 "TabletName|Message" (구버전 호환)
+        String tabletName, message, callId;
+        String[] parts = payload.split("\\|", 3);
+        if (parts.length >= 3) {
             tabletName = parts[0].trim();
             message    = parts[1].trim();
+            callId     = parts[2].trim();
+        } else if (parts.length == 2) {
+            tabletName = parts[0].trim();
+            message    = parts[1].trim();
+            callId     = null;
         } else {
             tabletName = fromIp;
             message    = payload;
+            callId     = null;
         }
 
-        CallItem item = new CallItem(tabletName, message, fromIp);
+        CallItem item = (callId != null && !callId.isEmpty())
+                ? new CallItem(callId, tabletName, message, fromIp)
+                : new CallItem(tabletName, message, fromIp);
         CallQueue.getInstance().add(item);
 
         mainHandler.post(() -> {

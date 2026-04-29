@@ -90,7 +90,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         playAlarm();
         startTick();
         CallQueue.getInstance().addListener(this);
-        renderList();
+        // renderList()는 onStart()에서 호출되므로 여기서 중복 호출 제거
     }
 
     @Override
@@ -143,6 +143,19 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         contentLayout.setVisibility(View.VISIBLE);
         tvCount.setText("대기 " + items.size() + "건");
 
+        // 글씨 크기 한 번만 읽어 캐시 — 아이템 수만큼 반복 읽기 방지
+        int leftRoomSize = AppSettings.getLeftRoomSize(this);
+        int leftMsgSize  = AppSettings.getLeftMsgSize(this);
+        int leftTimeSize = AppSettings.getLeftTimeSize(this);
+        int listRoomSize = AppSettings.getListRoomSize(this);
+        int listMsgSize  = AppSettings.getListMsgSize(this);
+        int listTimeSize = AppSettings.getListTimeSize(this);
+
+        // 왼쪽 패널 글씨 크기 적용
+        tvPrimaryRoom.setTextSize(leftRoomSize);
+        tvPrimaryMsg .setTextSize(leftMsgSize);
+        tvPrimaryTime.setTextSize(leftTimeSize);
+
         // Primary = 가장 오래된 호출 = 리스트 마지막 (items는 최신순, index 0이 최신)
         currentPrimary = items.get(items.size() - 1);
         tvPrimaryRoom.setText(currentPrimary.tabletName);
@@ -153,7 +166,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         callListContainer.removeAllViews();
         for (CallItem item : items) {
             boolean isPrimary = item.id.equals(currentPrimary.id);
-            callListContainer.addView(buildListItemView(item, isPrimary));
+            callListContainer.addView(buildListItemView(item, isPrimary, listRoomSize, listMsgSize, listTimeSize));
         }
     }
 
@@ -181,7 +194,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         }
     }
 
-    private View buildListItemView(CallItem item, boolean isPrimary) {
+    private View buildListItemView(CallItem item, boolean isPrimary, int roomSize, int msgSize, int timeSize) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -201,7 +214,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         tvRoom.setTextColor(isPrimary
                 ? Color.parseColor("#FFD54F")
                 : Color.parseColor("#90CAF9"));
-        tvRoom.setTextSize(26f);
+        tvRoom.setTextSize(roomSize);
         tvRoom.setTypeface(null, android.graphics.Typeface.BOLD);
         tvRoom.setGravity(android.view.Gravity.CENTER);
         LinearLayout.LayoutParams roomParams = new LinearLayout.LayoutParams(dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -225,14 +238,14 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         TextView tvMsg = new TextView(this);
         tvMsg.setText(item.message);
         tvMsg.setTextColor(Color.WHITE);
-        tvMsg.setTextSize(26f);
+        tvMsg.setTextSize(msgSize);
         tvMsg.setTypeface(null, android.graphics.Typeface.BOLD);
         textArea.addView(tvMsg);
 
         TextView tvTime = new TextView(this);
         tvTime.setText(timeFormat.format(new Date(item.timestamp)));
         tvTime.setTextColor(Color.parseColor("#888888"));
-        tvTime.setTextSize(16f);
+        tvTime.setTextSize(timeSize);
         textArea.addView(tvTime);
 
         card.addView(textArea);
@@ -296,7 +309,8 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
             alarmPlayer.setLooping(true);
 
             // prepareAsync: 메인 스레드 블로킹 없이 준비 후 자동 시작
-            alarmPlayer.setOnPreparedListener(MediaPlayer::start);
+            // mp == alarmPlayer 체크: destroy 후 뒤늦게 콜백될 때 이미 release된 플레이어를 start하는 것 방지
+            alarmPlayer.setOnPreparedListener(mp -> { if (mp == alarmPlayer) mp.start(); });
             alarmPlayer.setOnErrorListener((mp, what, extra) -> {
                 stopAlarm();
                 return true;
@@ -308,18 +322,21 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     }
 
     private void stopAlarm() {
-        try {
-            if (alarmPlayer != null) {
-                alarmPlayer.stop();
-                alarmPlayer.release();
-                alarmPlayer = null;
-            }
-            if (savedAlarmVolume >= 0 && audioManager != null) {
-                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0);
-                savedAlarmVolume = -1;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+        // 먼저 null로 교체해서 onPrepared 콜백이 뒤늦게 와도 start하지 못하게 막음
+        MediaPlayer player = alarmPlayer;
+        alarmPlayer = null;
+
+        if (player != null) {
+            // stop/release를 각각 try-catch: stop이 예외를 던져도 release는 반드시 호출
+            try { player.stop();    } catch (Exception ignored) {}
+            try { player.release(); } catch (Exception ignored) {}
+        }
+
+        // 원래 볼륨 복원
+        if (savedAlarmVolume >= 0 && audioManager != null) {
+            try { audioManager.setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0); }
+            catch (Exception ignored) {}
+            savedAlarmVolume = -1;
         }
     }
 

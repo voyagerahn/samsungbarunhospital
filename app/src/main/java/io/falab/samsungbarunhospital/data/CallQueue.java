@@ -61,12 +61,11 @@ public class CallQueue {
     }
 
     /**
-     * 환자 취소 → 해당 태블릿+메시지 항목 제거
+     * 환자 취소 → UUID로 정확히 1건만 제거
      */
-    public void cancelByTablet(String tabletName, String message) {
+    public void cancelById(String id) {
         items.removeIf(i ->
-                i.tabletName.equals(tabletName) &&
-                i.message.equals(message) &&
+                i.id.equals(id) &&
                 CallItem.STATUS_WAITING.equals(i.status));
         notifyListeners();
     }

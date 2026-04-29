@@ -37,6 +37,12 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private SeekBar      seekAlarmVolume;
     private TextView     tvAlarmVolumeValue;
 
+    // 글씨 크기 현재값 (sp) — +/- 버튼으로 조절
+    private int szLeftRoom, szLeftMsg, szLeftTime;
+    private int szListRoom, szListMsg, szListTime;
+    private TextView tvLeftRoomSizeVal, tvLeftMsgSizeVal, tvLeftTimeSizeVal;
+    private TextView tvListRoomSizeVal, tvListMsgSizeVal, tvListTimeSizeVal;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -69,6 +75,36 @@ public class AdminSettingsActivity extends AppCompatActivity {
             @Override public void onStartTrackingTouch(SeekBar s) {}
             @Override public void onStopTrackingTouch(SeekBar s) {}
         });
+
+        // 글씨 크기 — 저장값 로드 후 +/- 버튼 연결
+        szLeftRoom = AppSettings.getLeftRoomSize(this);
+        szLeftMsg  = AppSettings.getLeftMsgSize(this);
+        szLeftTime = AppSettings.getLeftTimeSize(this);
+        szListRoom = AppSettings.getListRoomSize(this);
+        szListMsg  = AppSettings.getListMsgSize(this);
+        szListTime = AppSettings.getListTimeSize(this);
+
+        tvLeftRoomSizeVal = findViewById(R.id.tvLeftRoomSizeVal);
+        tvLeftMsgSizeVal  = findViewById(R.id.tvLeftMsgSizeVal);
+        tvLeftTimeSizeVal = findViewById(R.id.tvLeftTimeSizeVal);
+        tvListRoomSizeVal = findViewById(R.id.tvListRoomSizeVal);
+        tvListMsgSizeVal  = findViewById(R.id.tvListMsgSizeVal);
+        tvListTimeSizeVal = findViewById(R.id.tvListTimeSizeVal);
+
+        refreshFontSizeLabels();
+
+        findViewById(R.id.btnLeftRoomMinus).setOnClickListener(v -> { szLeftRoom = Math.max(AppSettings.LEFT_ROOM_MIN, szLeftRoom - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnLeftRoomPlus) .setOnClickListener(v -> { szLeftRoom = Math.min(AppSettings.LEFT_ROOM_MAX, szLeftRoom + 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnLeftMsgMinus) .setOnClickListener(v -> { szLeftMsg  = Math.max(AppSettings.LEFT_MSG_MIN,  szLeftMsg  - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnLeftMsgPlus)  .setOnClickListener(v -> { szLeftMsg  = Math.min(AppSettings.LEFT_MSG_MAX,  szLeftMsg  + 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnLeftTimeMinus).setOnClickListener(v -> { szLeftTime = Math.max(AppSettings.LEFT_TIME_MIN, szLeftTime - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnLeftTimePlus) .setOnClickListener(v -> { szLeftTime = Math.min(AppSettings.LEFT_TIME_MAX, szLeftTime + 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListRoomMinus).setOnClickListener(v -> { szListRoom = Math.max(AppSettings.LIST_ROOM_MIN, szListRoom - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListRoomPlus) .setOnClickListener(v -> { szListRoom = Math.min(AppSettings.LIST_ROOM_MAX, szListRoom + 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListMsgMinus) .setOnClickListener(v -> { szListMsg  = Math.max(AppSettings.LIST_MSG_MIN,  szListMsg  - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListMsgPlus)  .setOnClickListener(v -> { szListMsg  = Math.min(AppSettings.LIST_MSG_MAX,  szListMsg  + 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListTimeMinus).setOnClickListener(v -> { szListTime = Math.max(AppSettings.LIST_TIME_MIN, szListTime - 1); refreshFontSizeLabels(); });
+        findViewById(R.id.btnListTimePlus) .setOnClickListener(v -> { szListTime = Math.min(AppSettings.LIST_TIME_MAX, szListTime + 1); refreshFontSizeLabels(); });
 
         // 현재 IP 표시
         tvCurrentIp.setText(getLocalIpAddress());
@@ -115,6 +151,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
             String pw = etPassword.getText().toString().trim();
             AppSettings.save(this, name, messages, pw);
             AppSettings.saveAlarmVolume(this, seekAlarmVolume.getProgress());
+            AppSettings.saveFontSizes(this, szLeftRoom, szLeftMsg, szLeftTime, szListRoom, szListMsg, szListTime);
             Toast.makeText(this, "저장되었습니다.", Toast.LENGTH_SHORT).show();
             finish();
         });
@@ -253,6 +290,15 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
             buttonListContainer.addView(row);
         }
+    }
+
+    private void refreshFontSizeLabels() {
+        tvLeftRoomSizeVal.setText("글씨 " + szLeftRoom);
+        tvLeftMsgSizeVal .setText("글씨 " + szLeftMsg);
+        tvLeftTimeSizeVal.setText("글씨 " + szLeftTime);
+        tvListRoomSizeVal.setText("글씨 " + szListRoom);
+        tvListMsgSizeVal .setText("글씨 " + szListMsg);
+        tvListTimeSizeVal.setText("글씨 " + szListTime);
     }
 
     private String getLocalIpAddress() {

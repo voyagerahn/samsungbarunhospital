@@ -22,6 +22,14 @@ public class AppSettings {
     private static final String KEY_NURSE_IPS        = "nurse_ips";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
 
+    // 간호사 화면 글씨 크기 (sp)
+    private static final String KEY_LEFT_ROOM_SIZE  = "left_room_size";
+    private static final String KEY_LEFT_MSG_SIZE   = "left_msg_size";
+    private static final String KEY_LEFT_TIME_SIZE  = "left_time_size";
+    private static final String KEY_LIST_ROOM_SIZE  = "list_room_size";
+    private static final String KEY_LIST_MSG_SIZE   = "list_msg_size";
+    private static final String KEY_LIST_TIME_SIZE  = "list_time_size";
+
     private static final String DEFAULT_PASSWORD  = "0819";
     private static final int    DEFAULT_ALARM_VOL = 80; // 기본 80%
 
@@ -42,6 +50,39 @@ public class AppSettings {
 
     public static void saveAlarmVolume(Context ctx, int percent) {
         prefs(ctx).edit().putInt(KEY_ALARM_VOLUME, Math.max(0, Math.min(100, percent))).apply();
+    }
+
+    // ── 간호사 화면 글씨 크기 (sp) ──────────────────────────────────────────
+    // 범위: UI가 깨지지 않는 최소~최대 sp 값
+    public static final int LEFT_ROOM_MIN = 40,  LEFT_ROOM_MAX = 120, LEFT_ROOM_DEF = 90;
+    public static final int LEFT_MSG_MIN  = 20,  LEFT_MSG_MAX  = 80,  LEFT_MSG_DEF  = 50;
+    public static final int LEFT_TIME_MIN = 12,  LEFT_TIME_MAX = 44,  LEFT_TIME_DEF = 28;
+    public static final int LIST_ROOM_MIN = 14,  LIST_ROOM_MAX = 44,  LIST_ROOM_DEF = 26;
+    public static final int LIST_MSG_MIN  = 14,  LIST_MSG_MAX  = 44,  LIST_MSG_DEF  = 26;
+    public static final int LIST_TIME_MIN = 10,  LIST_TIME_MAX = 26,  LIST_TIME_DEF = 16;
+
+    public static int getLeftRoomSize(Context ctx)  { return clamp(prefs(ctx).getInt(KEY_LEFT_ROOM_SIZE, LEFT_ROOM_DEF), LEFT_ROOM_MIN, LEFT_ROOM_MAX); }
+    public static int getLeftMsgSize(Context ctx)   { return clamp(prefs(ctx).getInt(KEY_LEFT_MSG_SIZE,  LEFT_MSG_DEF),  LEFT_MSG_MIN,  LEFT_MSG_MAX);  }
+    public static int getLeftTimeSize(Context ctx)  { return clamp(prefs(ctx).getInt(KEY_LEFT_TIME_SIZE, LEFT_TIME_DEF), LEFT_TIME_MIN, LEFT_TIME_MAX); }
+    public static int getListRoomSize(Context ctx)  { return clamp(prefs(ctx).getInt(KEY_LIST_ROOM_SIZE, LIST_ROOM_DEF), LIST_ROOM_MIN, LIST_ROOM_MAX); }
+    public static int getListMsgSize(Context ctx)   { return clamp(prefs(ctx).getInt(KEY_LIST_MSG_SIZE,  LIST_MSG_DEF),  LIST_MSG_MIN,  LIST_MSG_MAX);  }
+    public static int getListTimeSize(Context ctx)  { return clamp(prefs(ctx).getInt(KEY_LIST_TIME_SIZE, LIST_TIME_DEF), LIST_TIME_MIN, LIST_TIME_MAX); }
+
+    public static void saveFontSizes(Context ctx,
+            int leftRoom, int leftMsg, int leftTime,
+            int listRoom, int listMsg, int listTime) {
+        prefs(ctx).edit()
+                .putInt(KEY_LEFT_ROOM_SIZE, clamp(leftRoom, LEFT_ROOM_MIN, LEFT_ROOM_MAX))
+                .putInt(KEY_LEFT_MSG_SIZE,  clamp(leftMsg,  LEFT_MSG_MIN,  LEFT_MSG_MAX))
+                .putInt(KEY_LEFT_TIME_SIZE, clamp(leftTime, LEFT_TIME_MIN, LEFT_TIME_MAX))
+                .putInt(KEY_LIST_ROOM_SIZE, clamp(listRoom, LIST_ROOM_MIN, LIST_ROOM_MAX))
+                .putInt(KEY_LIST_MSG_SIZE,  clamp(listMsg,  LIST_MSG_MIN,  LIST_MSG_MAX))
+                .putInt(KEY_LIST_TIME_SIZE, clamp(listTime, LIST_TIME_MIN, LIST_TIME_MAX))
+                .apply();
+    }
+
+    private static int clamp(int val, int min, int max) {
+        return Math.max(min, Math.min(max, val));
     }
 
     // ── 비밀번호 ─────────────────────────────────────────────────────────────
