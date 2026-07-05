@@ -44,9 +44,13 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
     private TextView tvPrimaryRoom;
     private TextView tvPrimaryMsg;
     private TextView tvPrimaryTime;
+    private Button   btnPrimaryConfirm;
 
     // Right panel — full list
+    private View middleDivider;
+    private LinearLayout rightPanel;
     private LinearLayout callListContainer;
+    private Button btnToggleFullScreen;
 
     // Empty state
     private TextView tvEmpty;
@@ -76,16 +80,28 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
         setContentView(R.layout.activity_call_queue);
 
-        tvCount           = findViewById(R.id.tvCount);
-        contentLayout     = findViewById(R.id.contentLayout);
-        tvPrimaryRoom     = findViewById(R.id.tvPrimaryRoom);
-        tvPrimaryMsg      = findViewById(R.id.tvPrimaryMsg);
-        tvPrimaryTime     = findViewById(R.id.tvPrimaryTime);
-        callListContainer = findViewById(R.id.callListContainer);
-        tvEmpty           = findViewById(R.id.tvEmpty);
-        audioManager      = (AudioManager) getSystemService(AUDIO_SERVICE);
+        tvCount             = findViewById(R.id.tvCount);
+        contentLayout       = findViewById(R.id.contentLayout);
+        tvPrimaryRoom       = findViewById(R.id.tvPrimaryRoom);
+        tvPrimaryMsg        = findViewById(R.id.tvPrimaryMsg);
+        tvPrimaryTime       = findViewById(R.id.tvPrimaryTime);
+        btnPrimaryConfirm   = findViewById(R.id.btnPrimaryConfirm);
+        middleDivider       = findViewById(R.id.middleDivider);
+        rightPanel          = findViewById(R.id.rightPanel);
+        callListContainer   = findViewById(R.id.callListContainer);
+        btnToggleFullScreen = findViewById(R.id.btnToggleFullScreen);
+        tvEmpty             = findViewById(R.id.tvEmpty);
+        audioManager        = (AudioManager) getSystemService(AUDIO_SERVICE);
 
         findViewById(R.id.btnClose).setOnClickListener(v -> finish());
+        btnPrimaryConfirm.setOnClickListener(v -> {
+            if (currentPrimary != null) confirmCall(currentPrimary);
+        });
+        btnToggleFullScreen.setOnClickListener(v -> {
+            AppSettings.setFullScreenPrimary(this, !AppSettings.isFullScreenPrimary(this));
+            applyFullScreenMode();
+        });
+        applyFullScreenMode();
 
         playAlarm();
         startTick();
@@ -126,6 +142,13 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
             stopTick();
             finish();
         }
+    }
+
+    private void applyFullScreenMode() {
+        boolean fullScreen = AppSettings.isFullScreenPrimary(this);
+        middleDivider.setVisibility(fullScreen ? View.GONE : View.VISIBLE);
+        rightPanel.setVisibility(fullScreen ? View.GONE : View.VISIBLE);
+        btnToggleFullScreen.setText(fullScreen ? "목록 보기" : "전체화면");
     }
 
     private void renderList() {

@@ -36,6 +36,18 @@
             android:textStyle="bold" />
 
         <Button
+            android:id="@+id/btnToggleFullScreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:background="#37474F"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="6dp"
+            android:text="전체화면"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+
+        <Button
             android:id="@+id/btnClose"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -58,8 +70,9 @@
         android:orientation="horizontal"
         android:visibility="gone">
 
-        <!-- 좌측: 최우선 호출 강조 패널 (40%) -->
+        <!-- 좌측: 최우선 호출 강조 패널 (40%, 전체화면 모드에서는 100%) -->
         <LinearLayout
+            android:id="@+id/leftPanel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="2"
@@ -115,6 +128,18 @@
                         android:gravity="center"
                         android:textColor="#FF8A65" />
 
+                    <Button
+                        android:id="@+id/btnPrimaryConfirm"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="28dp"
+                        android:background="#2E7D32"
+                        android:paddingVertical="16dp"
+                        android:text="확인"
+                        android:textColor="#FFFFFF"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
                 </LinearLayout>
 
             </ScrollView>
@@ -123,12 +148,14 @@
 
         <!-- 구분선 -->
         <View
+            android:id="@+id/middleDivider"
             android:layout_width="2dp"
             android:layout_height="match_parent"
             android:background="#2A2A4A" />
 
-        <!-- 우측: 전체 대기 목록 (60%) -->
+        <!-- 우측: 전체 대기 목록 (60%, 전체화면 모드에서는 숨김) -->
         <LinearLayout
+            android:id="@+id/rightPanel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="3"

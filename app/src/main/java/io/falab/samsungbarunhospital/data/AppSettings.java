@@ -21,6 +21,7 @@ public class AppSettings {
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
+    private static final String KEY_FULLSCREEN_PRIMARY = "fullscreen_primary";
 
     // 간호사 화면 글씨 크기 (sp)
     private static final String KEY_LEFT_ROOM_SIZE  = "left_room_size";
@@ -50,6 +51,15 @@ public class AppSettings {
 
     public static void saveAlarmVolume(Context ctx, int percent) {
         prefs(ctx).edit().putInt(KEY_ALARM_VOLUME, Math.max(0, Math.min(100, percent))).apply();
+    }
+
+    // ── 최우선 호출 패널 전체화면 모드 (좌측 칸을 화면 전체로 표시) ───────────
+    public static boolean isFullScreenPrimary(Context ctx) {
+        return prefs(ctx).getBoolean(KEY_FULLSCREEN_PRIMARY, false);
+    }
+
+    public static void setFullScreenPrimary(Context ctx, boolean enabled) {
+        prefs(ctx).edit().putBoolean(KEY_FULLSCREEN_PRIMARY, enabled).apply();
     }
 
     // ── 간호사 화면 글씨 크기 (sp) ──────────────────────────────────────────
