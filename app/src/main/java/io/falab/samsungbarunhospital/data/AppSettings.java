@@ -20,6 +20,7 @@ public class AppSettings {
     private static final String KEY_PASSWORD        = "admin_password";
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
+    private static final String KEY_BLE_PEER_ID      = "ble_peer_id";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
     private static final String KEY_FULLSCREEN_PRIMARY = "fullscreen_primary";
 
@@ -103,6 +104,22 @@ public class AppSettings {
     // ── 태블릿 이름 ──────────────────────────────────────────────────────────
     public static String getTabletName(Context ctx) {
         return prefs(ctx).getString(KEY_TABLET_NAME, "환자 태블릿");
+    }
+
+    // ── BLE mesh peerId (기기별 영구 8바이트 랜덤 식별자, 16자 hex) ────────────
+    public static synchronized String getOrCreateBlePeerId(Context ctx) {
+        SharedPreferences prefs = prefs(ctx);
+        String existing = prefs.getString(KEY_BLE_PEER_ID, null);
+        if (existing != null && existing.length() == 16) {
+            return existing;
+        }
+        byte[] id = new byte[8];
+        new java.security.SecureRandom().nextBytes(id);
+        StringBuilder sb = new StringBuilder(16);
+        for (byte b : id) sb.append(String.format("%02x", b));
+        String hex = sb.toString();
+        prefs.edit().putString(KEY_BLE_PEER_ID, hex).apply();
+        return hex;
     }
 
     // ── 간호사 IP 목록 ───────────────────────────────────────────────────────

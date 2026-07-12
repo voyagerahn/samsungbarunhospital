@@ -23,6 +23,7 @@ import io.falab.samsungbarunhospital.data.CallQueue;
 import io.falab.samsungbarunhospital.model.CallItem;
 import io.falab.samsungbarunhospital.network.AlertReceiverService;
 import io.falab.samsungbarunhospital.network.TcpSender;
+import io.falab.samsungbarunhospital.network.ble.BleMeshManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -212,8 +213,13 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
     private void confirmCall(CallItem item) {
         CallQueue.getInstance().markDone(item.id);
+        String confirmPayload = "CONFIRMED|" + item.tabletName + "|" + item.message;
         if (item.senderIp != null && !item.senderIp.isEmpty()) {
-            TcpSender.send(item.senderIp, "CONFIRMED|" + item.tabletName + "|" + item.message, null);
+            TcpSender.send(item.senderIp, confirmPayload, null);
+        }
+        if (item.senderPeerId != null && !item.senderPeerId.isEmpty()
+                && BleMeshManager.isSupported(getApplicationContext())) {
+            BleMeshManager.sendConfirmed(item.senderPeerId, confirmPayload);
         }
     }
 

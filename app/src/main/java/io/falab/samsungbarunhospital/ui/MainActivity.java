@@ -28,6 +28,8 @@ import io.falab.samsungbarunhospital.data.AppSettings;
 import io.falab.samsungbarunhospital.model.ButtonConfig;
 import io.falab.samsungbarunhospital.network.AlertReceiverService;
 import io.falab.samsungbarunhospital.network.TcpSender;
+import io.falab.samsungbarunhospital.network.ble.BleMeshManager;
+import io.falab.samsungbarunhospital.network.ble.BleMeshService;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -112,6 +114,14 @@ public class MainActivity extends AppCompatActivity {
             startForegroundService(serviceIntent);
         } else {
             startService(serviceIntent);
+        }
+
+        // BLE mesh 보조 통신 — Wi-Fi가 다른 네트워크/서브넷일 때를 위한 근거리 대체 경로.
+        // 지원 안 되는 기기(API<24 또는 권한 미부여)에서는 isSupported()가 false라 완전히 비활성.
+        if (BleMeshManager.isSupported(getApplicationContext())) {
+            BleMeshManager.setReceiveListener((payload, fromPeerId) ->
+                    AlertReceiverService.handleIncomingFromBle(payload, fromPeerId));
+            BleMeshService.start(getApplicationContext(), AppSettings.getOrCreateBlePeerId(this));
         }
 
         // 배경 ViewFlipper
@@ -313,7 +323,8 @@ public class MainActivity extends AppCompatActivity {
     // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
     private void sendCallMessage(String message) {
         List<String> targets = AppSettings.getNurseIps(this);
-        if (targets.isEmpty()) {
+        boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
+        if (targets.isEmpty() && !bleAvailable) {
             Toast.makeText(this, "등록된 간호사 태블릿이 없습니다.\n관리자 설정에서 IP를 추가하세요.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -323,6 +334,19 @@ public class MainActivity extends AppCompatActivity {
         String callId  = java.util.UUID.randomUUID().toString();
         String payload = tabletName + "|" + message + "|" + callId;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
+
+        // BLE는 flood 방식이라 개별 ACK가 없음 — UI 성공 판정은 기존처럼 TCP 결과 기준으로 유지
+        if (bleAvailable) {
+            BleMeshManager.broadcastCall(payload);
+        }
+
+        if (targets.isEmpty()) {
+            // TCP 대상은 없지만 BLE는 사용 가능 — 전달 확인은 불가하므로 낙관적으로 배너에 추가
+            activeCallIds.add(callId);
+            activeCallMsgs.add(message);
+            refreshCallBanner();
+            return;
+        }
 
         AtomicInteger done    = new AtomicInteger(0);
         AtomicInteger success = new AtomicInteger(0);
@@ -413,6 +437,9 @@ public class MainActivity extends AppCompatActivity {
         String cancelPayload = "CANCEL|" + callId;
         for (String ip : AppSettings.getNurseIps(this)) {
             TcpSender.send(ip, cancelPayload, null);
+        }
+        if (BleMeshManager.isSupported(getApplicationContext())) {
+            BleMeshManager.broadcastCancel(cancelPayload);
         }
         int idx = activeCallIds.indexOf(callId);
         if (idx >= 0) {

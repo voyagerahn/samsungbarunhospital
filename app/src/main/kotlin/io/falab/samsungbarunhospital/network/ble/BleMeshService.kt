@@ -22,6 +22,7 @@ class BleMeshService : Service() {
         private const val SERVICE_CHANNEL_ID = "service_channel"
         private const val EXTRA_PEER_ID = "peer_id"
 
+        @JvmStatic
         fun start(context: android.content.Context, peerIdHex: String) {
             val intent = Intent(context, BleMeshService::class.java)
             intent.putExtra(EXTRA_PEER_ID, peerIdHex)

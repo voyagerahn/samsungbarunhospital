@@ -15,7 +15,6 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import io.falab.samsungbarunhospital.data.CallQueue;
-import io.falab.samsungbarunhospital.model.CallItem;
 import io.falab.samsungbarunhospital.ui.CallQueueActivity;
 
 import java.io.BufferedReader;
@@ -90,7 +89,7 @@ public class AlertReceiverService extends Service {
             String fromIp  = client.getInetAddress().getHostAddress();
             if (payload != null && !payload.trim().isEmpty()) {
                 out.println("ACK"); // 수신 확인 즉시 응답
-                handleIncoming(payload.trim(), fromIp);
+                react(IncomingCallHandler.parseAndApply(payload.trim(), fromIp, null));
             }
         } catch (Exception e) {
         } finally {
@@ -98,57 +97,36 @@ public class AlertReceiverService extends Service {
         }
     }
 
-    private void handleIncoming(String payload, String fromIp) {
-        // 환자 호출 취소: "CANCEL|<callId>"
-        if (payload.startsWith("CANCEL|")) {
-            String[] parts = payload.split("\\|", 2);
-            if (parts.length == 2) {
-                CallQueue.getInstance().cancelById(parts[1].trim());
-            }
-            return;
+    /** BLE mesh 수신 경로(BleMeshManager.ReceiveListener)에서 호출하는 정적 진입점. */
+    public static void handleIncomingFromBle(String payload, String fromPeerId) {
+        react(IncomingCallHandler.parseAndApply(payload, null, fromPeerId));
+    }
+
+    private static void react(IncomingCallHandler.Result result) {
+        AlertReceiverService svc = instance;
+        if (svc == null) return; // 이론상 발생 안 함 — MainActivity가 BLE 시작 전 이미 TCP 서비스를 기동
+
+        switch (result.kind) {
+            case NEW_CALL:
+                svc.mainHandler.post(() -> {
+                    if (!CallQueueActivity.isRunning) {
+                        Intent alertIntent = new Intent(svc, CallQueueActivity.class);
+                        alertIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                        svc.startActivity(alertIntent);
+                    }
+                    svc.updateNotificationBadge();
+                });
+                break;
+            case CONFIRMED:
+                if (confirmListener != null) {
+                    svc.mainHandler.post(() -> confirmListener.onCallConfirmed(result.confirmedTabletName, result.confirmedMessage));
+                }
+                break;
+            case CANCEL:
+            case IGNORED:
+            default:
+                break;
         }
-
-        // 간호사 확인 응답: "CONFIRMED|<TabletName>|<Message>" (환자 태블릿이 수신)
-        if (payload.startsWith("CONFIRMED|")) {
-            String[] parts = payload.split("\\|", 3);
-            if (parts.length == 3 && confirmListener != null) {
-                String tabletName = parts[1].trim();
-                String message    = parts[2].trim();
-                mainHandler.post(() -> confirmListener.onCallConfirmed(tabletName, message));
-            }
-            return;
-        }
-
-        // 환자 호출: "TabletName|Message|CallId" 또는 "TabletName|Message" (구버전 호환)
-        String tabletName, message, callId;
-        String[] parts = payload.split("\\|", 3);
-        if (parts.length >= 3) {
-            tabletName = parts[0].trim();
-            message    = parts[1].trim();
-            callId     = parts[2].trim();
-        } else if (parts.length == 2) {
-            tabletName = parts[0].trim();
-            message    = parts[1].trim();
-            callId     = null;
-        } else {
-            tabletName = fromIp;
-            message    = payload;
-            callId     = null;
-        }
-
-        CallItem item = (callId != null && !callId.isEmpty())
-                ? new CallItem(callId, tabletName, message, fromIp)
-                : new CallItem(tabletName, message, fromIp);
-        CallQueue.getInstance().add(item);
-
-        mainHandler.post(() -> {
-            if (!CallQueueActivity.isRunning) {
-                Intent alertIntent = new Intent(this, CallQueueActivity.class);
-                alertIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                startActivity(alertIntent);
-            }
-            updateNotificationBadge();
-        });
     }
 
     private void updateNotificationBadge() {

@@ -45,11 +45,20 @@ public class CallQueue {
     /**
      * 새 호출 추가
      * - 큐가 MAX_SIZE를 초과하면 가장 오래된 항목 제거 후 추가
+     * - 같은 id가 이미 큐에 있으면 추가하지 않음 (TCP와 BLE로 같은 호출이 동시에 도착하는 경우 대비)
+     *
+     * @return true면 신규 추가됨(알림 필요), false면 이미 같은 id가 있어 무시됨
      */
-    public void add(CallItem newItem) {
+    public boolean add(CallItem newItem) {
         long now = System.currentTimeMillis();
         // 만료 항목 먼저 정리
         purgeExpired(now);
+
+        for (CallItem existing : items) {
+            if (existing.id.equals(newItem.id)) {
+                return false;
+            }
+        }
 
         // 최대 크기 초과 시 가장 오래된 항목(리스트 끝) 제거
         while (items.size() >= MAX_SIZE) {
@@ -58,6 +67,7 @@ public class CallQueue {
 
         items.add(0, newItem); // 최신 순
         notifyListeners();
+        return true;
     }
 
     /**
