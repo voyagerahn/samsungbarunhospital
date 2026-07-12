@@ -12,6 +12,7 @@ import androidx.core.app.ActivityCompat
  */
 object BlePermissions {
 
+    @JvmStatic
     fun requiredPermissions(): Array<String> {
         val permissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -26,6 +27,7 @@ object BlePermissions {
         return permissions.toTypedArray()
     }
 
+    @JvmStatic
     fun hasAll(context: Context): Boolean = requiredPermissions().all {
         ActivityCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }

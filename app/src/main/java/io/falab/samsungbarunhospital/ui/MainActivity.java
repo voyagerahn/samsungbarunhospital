@@ -1,5 +1,7 @@
 package io.falab.samsungbarunhospital.ui;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.app.AlertDialog;
@@ -30,6 +32,7 @@ import io.falab.samsungbarunhospital.network.AlertReceiverService;
 import io.falab.samsungbarunhospital.network.TcpSender;
 import io.falab.samsungbarunhospital.network.ble.BleMeshManager;
 import io.falab.samsungbarunhospital.network.ble.BleMeshService;
+import io.falab.samsungbarunhospital.network.ble.BlePermissions;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -62,9 +65,22 @@ public class MainActivity extends AppCompatActivity {
     private int  counterRight  = 0;
     private int  counterCenter = 0;
 
+    private boolean blePermissionRequested = false;
+    private ActivityResultLauncher<String[]> blePermissionLauncher;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // registerForActivityResult()는 Activity가 STARTED 상태가 되기 전에 등록해야 하므로 onCreate 최상단에서 처리
+        blePermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                grantResults -> {
+                    if (BleMeshManager.isSupported(getApplicationContext())) {
+                        startBleMeshIfSupported();
+                    } else {
+                        Toast.makeText(this, "근거리 무선 보조 통신을 사용하려면 권한이 필요합니다.", Toast.LENGTH_LONG).show();
+                    }
+                });
         setContentView(R.layout.activity_main);
 
         buttonContainer  = findViewById(R.id.buttonContainer);
@@ -117,11 +133,12 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // BLE mesh 보조 통신 — Wi-Fi가 다른 네트워크/서브넷일 때를 위한 근거리 대체 경로.
-        // 지원 안 되는 기기(API<24 또는 권한 미부여)에서는 isSupported()가 false라 완전히 비활성.
+        // 이미 권한이 있으면 바로 시작, 없으면 1회 요청(거부해도 TCP 전용으로 정상 동작).
         if (BleMeshManager.isSupported(getApplicationContext())) {
-            BleMeshManager.setReceiveListener((payload, fromPeerId) ->
-                    AlertReceiverService.handleIncomingFromBle(payload, fromPeerId));
-            BleMeshService.start(getApplicationContext(), AppSettings.getOrCreateBlePeerId(this));
+            startBleMeshIfSupported();
+        } else if (!blePermissionRequested) {
+            blePermissionRequested = true;
+            blePermissionLauncher.launch(BlePermissions.requiredPermissions());
         }
 
         // 배경 ViewFlipper
@@ -318,6 +335,14 @@ public class MainActivity extends AppCompatActivity {
 
         dialogRef[0] = new AlertDialog.Builder(this).setView(scrollView).create();
         dialogRef[0].show();
+    }
+
+    /** 권한이 확인된 이후(이미 있었거나 방금 승인됨) BLE mesh 수신 리스너 등록 + 서비스 기동. */
+    private void startBleMeshIfSupported() {
+        if (!BleMeshManager.isSupported(getApplicationContext())) return;
+        BleMeshManager.setReceiveListener((payload, fromPeerId) ->
+                AlertReceiverService.handleIncomingFromBle(payload, fromPeerId));
+        BleMeshService.start(getApplicationContext(), AppSettings.getOrCreateBlePeerId(this));
     }
 
     // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
