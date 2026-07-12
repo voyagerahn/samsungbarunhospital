@@ -34,6 +34,16 @@ object BleMeshConstants {
     const val STALE_PEER_TIMEOUT_MS = 60 * 1000L
     const val ANNOUNCE_INTERVAL_MS = 30 * 1000L
 
+    // Ward-scale cap, not a hard BLE stack limit (most Android stacks tolerate more) — keeps
+    // resource usage predictable without bitchat's RSSI-based eviction logic.
+    const val MAX_CONNECTIONS = 8
+
+    const val GATT_MTU_REQUEST = 517
+    const val SCAN_RESTART_BACKOFF_BASE_MS = 3_000L
+    const val SCAN_RESTART_BACKOFF_MAX_MS = 30_000L
+    const val ADVERTISE_RESTART_BACKOFF_BASE_MS = 3_000L
+    const val ADVERTISE_RESTART_BACKOFF_MAX_MS = 30_000L
+
     // Newly generated UUIDs, deliberately distinct from bitchat's own service UUID so this
     // app's GATT server is never mistaken for (or noisily probed by) a nearby bitchat client.
     val SERVICE_UUID: UUID = UUID.fromString("08a15799-f1a9-441c-a850-c14d32a2803b")
