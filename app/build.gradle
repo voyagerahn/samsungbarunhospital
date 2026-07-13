@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'io.falab.samsungbarunhospital'
+    namespace 'io.voyager.samsungbarunhospital'
     compileSdk 33
 
     defaultConfig {
-        applicationId "io.falab.samsungbarunhospital"
+        applicationId "io.voyager.samsungbarunhospital"
         minSdk 24
         targetSdk 33
         versionCode 1
