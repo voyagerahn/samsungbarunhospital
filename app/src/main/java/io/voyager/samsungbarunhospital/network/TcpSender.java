@@ -23,6 +23,11 @@ public class TcpSender {
         void onResult(boolean success);
     }
 
+    public interface RawResponseCallback {
+        /** @param rawResponse 실패(연결 불가/타임아웃) 시 null */
+        void onResult(String rawResponse);
+    }
+
     /** 호출 메시지 전송, ACK 수신 후 callback 호출 */
     public static void send(String targetIp, String message, Callback callback) {
         POOL.execute(() -> {
@@ -36,6 +41,23 @@ public class TcpSender {
                 if (callback != null) callback.onResult("ACK".equals(response));
             } catch (Exception e) {
                 if (callback != null) callback.onResult(false);
+            }
+        });
+    }
+
+    /** 간호사 태블릿에 설정(호출 메시지·버튼 목록)을 요청하고, 응답 원본 라인을 그대로 콜백에 전달 */
+    public static void requestConfig(String targetIp, RawResponseCallback callback) {
+        POOL.execute(() -> {
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(targetIp, PORT), CONNECT_TIMEOUT_MS);
+                socket.setSoTimeout(READ_TIMEOUT_MS);
+                PrintWriter    out = new PrintWriter(socket.getOutputStream(), true);
+                BufferedReader in  = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+                out.println(ConfigSync.REQUEST);
+                String response = in.readLine();
+                if (callback != null) callback.onResult(response);
+            } catch (Exception e) {
+                if (callback != null) callback.onResult(null);
             }
         });
     }

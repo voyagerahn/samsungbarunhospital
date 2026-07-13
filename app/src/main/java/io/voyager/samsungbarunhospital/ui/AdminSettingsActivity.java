@@ -21,6 +21,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
+import io.voyager.samsungbarunhospital.network.ConfigSync;
+import io.voyager.samsungbarunhospital.network.TcpSender;
 import io.voyager.samsungbarunhospital.network.ble.BleMeshManager;
 import io.voyager.samsungbarunhospital.network.ble.BleMode;
 
@@ -126,6 +128,9 @@ public class AdminSettingsActivity extends AppCompatActivity {
         // 간호사 IP 추가 (다이얼로그)
         findViewById(R.id.btnAddNurseIp).setOnClickListener(v -> showAddIpDialog());
 
+        // 간호사 설정 불러오기
+        findViewById(R.id.btnLoadNurseConfig).setOnClickListener(v -> showNurseConfigPicker());
+
         refreshBleStatus();
         findViewById(R.id.btnRefreshBleStatus).setOnClickListener(v -> refreshBleStatus());
 
@@ -199,6 +204,58 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("취소", null)
                 .show();
+    }
+
+    /** 등록된 간호사 태블릿 중 하나를 골라 그 설정(호출 메시지·버튼)을 불러오는 흐름의 시작점. */
+    private void showNurseConfigPicker() {
+        List<String> ips = AppSettings.getNurseIps(this);
+        if (ips.isEmpty()) {
+            Toast.makeText(this, "등록된 간호사 태블릿이 없습니다.\n먼저 IP를 추가하세요.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String[] items = ips.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("어느 간호사 태블릿의 설정을 불러올까요?")
+                .setItems(items, (d, which) -> requestNurseConfig(items[which]))
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void requestNurseConfig(String nurseIp) {
+        Toast.makeText(this, "설정을 요청하는 중...", Toast.LENGTH_SHORT).show();
+        TcpSender.requestConfig(nurseIp, rawResponse -> runOnUiThread(() -> {
+            ConfigSync.RemoteConfig remote = ConfigSync.parseResponsePayload(rawResponse);
+            if (remote == null) {
+                Toast.makeText(this, "설정을 가져오지 못했습니다. 연결 상태를 확인하세요.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            confirmApplyRemoteConfig(remote);
+        }));
+    }
+
+    private void confirmApplyRemoteConfig(ConfigSync.RemoteConfig remote) {
+        String summary = "메시지 " + remote.messages.size() + "개, 버튼 " + remote.buttons.size() + "개를 불러왔습니다.\n"
+                + "지금 이 기기에 적용할까요? (기존 설정을 덮어씁니다)";
+        new AlertDialog.Builder(this)
+                .setTitle("설정 적용")
+                .setMessage(summary)
+                .setPositiveButton("적용", (d, w) -> applyRemoteConfig(remote))
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void applyRemoteConfig(ConfigSync.RemoteConfig remote) {
+        // 메시지: 입력 필드만 채움 — 기존 메시지 편집과 동일하게 하단 "저장" 버튼을 눌러야 반영됨.
+        for (int i = 0; i < etMessages.length; i++) {
+            etMessages[i].setText(i < remote.messages.size() ? remote.messages.get(i) : "");
+        }
+
+        // 버튼: 버튼 추가/수정/삭제가 원래 즉시 저장되는 것과 동일하게 바로 반영.
+        AppSettings.saveButtonConfigs(this, remote.buttons);
+        populateButtonList();
+
+        Toast.makeText(this, "버튼 설정은 바로 적용되었습니다. 메시지는 하단 저장 버튼을 눌러야 반영됩니다.", Toast.LENGTH_LONG).show();
     }
 
     private void populateNurseIpList() {

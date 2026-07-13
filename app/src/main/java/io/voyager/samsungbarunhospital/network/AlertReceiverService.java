@@ -88,8 +88,13 @@ public class AlertReceiverService extends Service {
             String payload = in.readLine();
             String fromIp  = client.getInetAddress().getHostAddress();
             if (payload != null && !payload.trim().isEmpty()) {
-                out.println("ACK"); // 수신 확인 즉시 응답
-                react(IncomingCallHandler.parseAndApply(payload.trim(), fromIp, null));
+                String trimmed = payload.trim();
+                if (ConfigSync.REQUEST.equals(trimmed)) {
+                    out.println(ConfigSync.buildResponsePayload(getApplicationContext()));
+                } else {
+                    out.println("ACK"); // 수신 확인 즉시 응답
+                    react(IncomingCallHandler.parseAndApply(trimmed, fromIp, null));
+                }
             }
         } catch (Exception e) {
         } finally {
