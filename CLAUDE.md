@@ -21,7 +21,23 @@
 - `data/AppSettings.java`: 간호사 IP 목록(`KEY_NURSE_IPS`), 태블릿 표시 이름(`KEY_TABLET_NAME`), BLE peerId(`KEY_BLE_PEER_ID`, 8바이트 랜덤 hex, 기기별 영구값) 등 SharedPreferences 기반 설정.
 - IP는 관리자가 수동 등록(`AdminSettingsActivity`), 자동 discovery(mDNS 등) 없음.
 
-## BLE mesh 보조 통신 (신규, `feature/ble-mesh` 브랜치)
+## 간호사 설정 불러오기 (신규, `feature/ble-mesh` 브랜치, TCP만 사용)
+
+환자 태블릿이 등록된 간호사 태블릿 중 하나를 골라 그 태블릿의 **호출 메시지 목록·런처 버튼 설정**을 직접 요청해서 읽어오는 기능. 서버 없이, 기존 TCP 호출 포트(9999)를 그대로 재사용.
+
+- `network/ConfigSync.java`: `"CONFIG_REQUEST"` 요청 / `"CONFIG|<json>"` 응답 프로토콜. JSON에 `version`(현재 1) 필드 포함 — 나중에 형식이 바뀌면 이 앱이 이해 못하는 미래 버전을 거부할 수 있게. **버튼의 `imagePath`(관리자가 직접 업로드한 이미지)는 절대 동기화하지 않음** — 로컬 파일 경로라 다른 기기에서 의미 없음, 받는 쪽은 `drawableRes` 또는 기본 아이콘으로 대체.
+- `network/TcpSender.java`: `requestConfig(ip, RawResponseCallback)` 추가 — 기존 `send()`(ACK만 확인)와 별개로 실제 응답 데이터를 그대로 콜백에 전달.
+- `network/AlertReceiverService.java`: `handleClient()`에서 payload가 `ConfigSync.REQUEST`면 "ACK" 대신 `ConfigSync.buildResponsePayload()` 결과를 응답, 그 외에는 기존 흐름 그대로(`IncomingCallHandler`는 안 건드림).
+- `ui/AdminSettingsActivity.java`: "간호사 설정 불러오기" 버튼 → 등록된 간호사 IP 선택 다이얼로그 → 요청 → 확인 다이얼로그(메시지/버튼 개수 표시) → 적용. **적용 시점이 비대칭**: 버튼은 즉시 저장(기존 버튼 추가/수정/삭제가 원래 즉시 저장이라 일관성 유지), 메시지는 입력 필드만 채우고 하단 "저장" 버튼을 눌러야 반영(기존 메시지 편집 동작과 동일). 의도적 설계이며 버그 아님.
+- **범위 제한(의도적)**: BLE mesh로는 확장하지 않음 — BLE는 flood/relay 구조라 특정 상대에게 요청-응답을 주고받는 것과 궁합이 안 좋음. 필요해지면 별도 논의.
+- **범위 제한(의도적)**: 필드 목록을 선언적으로 관리하는 범용 동기화 프레임워크가 아님 — 지금은 메시지·버튼 두 항목만 하드코딩. 항목이 늘어나면 그때 리팩터링.
+- 테스트: `app/src/test/java/.../network/ConfigSyncTest.java`(Robolectric, 6개) — 라운드트립, 버전 필드 검증, 비정상 입력 처리.
+
+## 관리자 설정 화면 UI (카드형)
+
+`activity_admin_settings.xml`은 기능별로 `res/drawable/bg_card.xml`(둥근 모서리 배경)로 감싼 카드 8개로 구성(기기 정보 / 간호사 태블릿(IP 목록+설정 불러오기) / BLE 상태 / 알람 음량 / 글씨 크기 / 태블릿 기본정보(이름+비밀번호) / 호출 메시지 / 앱 버튼 관리). 저장/취소 버튼은 카드 밖 맨 아래 고정. **기존 `android:id`는 전부 그대로 유지**되어 있으니 Java 쪽 `findViewById` 호출부는 영향 없음 — 새 카드를 추가할 때도 이 패턴(배경 `@drawable/bg_card`, padding 20dp, marginBottom 20dp)을 따르면 됨.
+
+## BLE mesh 보조 통신 (`feature/ble-mesh` 브랜치)
 
 ### 왜 추가했나
 같은 Wi-Fi가 아니지만 물리적으로 가까운 태블릿끼리 서버 없이 통신하기 위한 보조 경로. bitchat-android(`/Users/ahnjaesung/Projects/bitchat-android`)의 BLE mesh 전송 계층을 참고/이식(Noise 암호화·서명·gossip sync 등 채팅 전용 기능은 제거).
@@ -81,4 +97,8 @@ Java 쪽 신규/변경 파일: `model/CallItem.java`(senderPeerId 필드 추가)
 ### 다음에 이어서 할 일
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.
 - 위 "알려진 한계" 2번(연결 캡 8개)·3번(하드웨어 advertise 미지원) — 실기기에서 문제로 확인되면 우선 대응 필요.
+- "간호사 설정 불러오기" 기능도 실기기(또는 에뮬레이터 2대)로 실제 요청→응답→적용 흐름 검증 필요 — 지금까지는 유닛테스트(`ConfigSyncTest`)와 빌드 성공만 확인됨.
+
+### 개발 환경 참고
+adb 경로가 PATH에 없음 — `$HOME/Library/Android/sdk/platform-tools/adb`로 직접 호출. 에뮬레이터 실행 중이면 `adb devices -l`로 확인 후 `adb install -r app/build/outputs/apk/debug/app-debug.apk`, `adb shell monkey -p io.voyager.samsungbarunhospital -c android.intent.category.LAUNCHER 1`(실행), `adb exec-out screencap -p > 파일.png`(스크린샷)로 실제 동작을 직접 확인할 수 있었음.
 - `feature/ble-mesh` → `main` 병합은 실기기 검증 이후, 사용자 승인 후 진행.
