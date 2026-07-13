@@ -21,6 +21,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
+import io.voyager.samsungbarunhospital.network.ble.BleMeshManager;
+import io.voyager.samsungbarunhospital.network.ble.BleMode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +36,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private LinearLayout buttonListContainer;
     private LinearLayout nurseIpListContainer;
     private TextView     tvCurrentIp;
+    private TextView     tvBleStatus;
     private SeekBar      seekAlarmVolume;
     private TextView     tvAlarmVolumeValue;
 
@@ -53,6 +56,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         buttonListContainer  = findViewById(R.id.buttonListContainer);
         nurseIpListContainer = findViewById(R.id.nurseIpListContainer);
         tvCurrentIp          = findViewById(R.id.tvCurrentIp);
+        tvBleStatus          = findViewById(R.id.tvBleStatus);
 
         etMessages = new EditText[]{
                 findViewById(R.id.etMsg1), findViewById(R.id.etMsg2),
@@ -122,6 +126,9 @@ public class AdminSettingsActivity extends AppCompatActivity {
         // 간호사 IP 추가 (다이얼로그)
         findViewById(R.id.btnAddNurseIp).setOnClickListener(v -> showAddIpDialog());
 
+        refreshBleStatus();
+        findViewById(R.id.btnRefreshBleStatus).setOnClickListener(v -> refreshBleStatus());
+
 
         // 버튼 추가
         findViewById(R.id.btnAddButton).setOnClickListener(v -> {
@@ -155,6 +162,12 @@ public class AdminSettingsActivity extends AppCompatActivity {
             Toast.makeText(this, "저장되었습니다.", Toast.LENGTH_SHORT).show();
             finish();
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshBleStatus();
     }
 
     @Override
@@ -299,6 +312,43 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvListRoomSizeVal.setText("글씨 " + szListRoom);
         tvListMsgSizeVal .setText("글씨 " + szListMsg);
         tvListTimeSizeVal.setText("글씨 " + szListTime);
+    }
+
+    /** 관리자가 현장에서 "왜 근거리 통신이 안 되지?"를 스스로 판단할 수 있게 하는 가벼운 진단 패널. */
+    private void refreshBleStatus() {
+        BleMode mode = BleMeshManager.getMode(getApplicationContext());
+        StringBuilder sb = new StringBuilder();
+
+        if (mode == BleMode.FULL) {
+            sb.append("모드: 정상 (다른 태블릿이 이 기기를 찾아 연결할 수 있습니다)\n");
+        } else if (mode == BleMode.CENTRAL_ONLY) {
+            sb.append("모드: 제한적 (Android 7 추정 — 이 기기가 먼저 찾아서 연결할 수는 있지만, 다른 기기가 이 기기를 찾아올 수는 없습니다)\n");
+        } else {
+            sb.append("모드: 사용 불가 (권한이 없거나 이 기기가 지원하지 않음 — Wi-Fi를 통한 호출만 가능합니다)\n");
+        }
+
+        if (mode != BleMode.UNSUPPORTED) {
+            int connections = BleMeshManager.getConnectionCount();
+            long lastActivity = BleMeshManager.getLastActivityAtMs();
+
+            sb.append("서비스 실행 중: ").append(BleMeshManager.isRunning() ? "예" : "아니오").append("\n");
+            sb.append("현재 연결된 기기: ").append(connections).append("대\n");
+
+            if (lastActivity == 0L) {
+                sb.append("최근 통신: 아직 없음");
+            } else {
+                long minutesAgo = (System.currentTimeMillis() - lastActivity) / 60000L;
+                sb.append("최근 통신: ").append(minutesAgo <= 0 ? "방금 전" : minutesAgo + "분 전");
+            }
+
+            if (connections == 0) {
+                sb.append("\n\n⚠ 주변에 연결된 태블릿이 없습니다. 거리가 너무 멀거나 벽 등의 장애물이 있거나, 상대 기기의 블루투스가 꺼져 있을 수 있습니다.");
+            }
+        } else {
+            sb.append("\n\n⚠ 설정 → 앱 권한에서 근거리 통신(블루투스, 위치) 권한을 허용해야 이 기능을 사용할 수 있습니다.");
+        }
+
+        tvBleStatus.setText(sb.toString());
     }
 
     private String getLocalIpAddress() {

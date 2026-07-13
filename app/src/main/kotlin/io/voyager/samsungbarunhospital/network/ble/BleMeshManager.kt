@@ -29,6 +29,7 @@ object BleMeshManager {
     @Volatile private var receiveListener: ReceiveListener? = null
     @Volatile private var started = false
     @Volatile private var mode: BleMode = BleMode.UNSUPPORTED
+    @Volatile private var lastActivityAtMs: Long = 0L
 
     private var myPeerId: ByteArray = ByteArray(BleMeshConstants.PEER_ID_SIZE)
 
@@ -54,6 +55,17 @@ object BleMeshManager {
 
     @JvmStatic
     fun isSupported(context: Context): Boolean = getMode(context) != BleMode.UNSUPPORTED
+
+    /** For a lightweight admin-facing diagnostic panel — not used by the call flow itself. */
+    @JvmStatic
+    fun isRunning(): Boolean = started
+
+    @JvmStatic
+    fun getConnectionCount(): Int = connectionManager.count()
+
+    /** Epoch ms of the last valid packet seen from another device, or 0 if none yet this session. */
+    @JvmStatic
+    fun getLastActivityAtMs(): Long = lastActivityAtMs
 
     @Synchronized
     @JvmStatic
@@ -106,6 +118,7 @@ object BleMeshManager {
         serverManager = null
         connectionManager.clear()
         dedupCache.clear()
+        lastActivityAtMs = 0L
     }
 
     @JvmStatic
@@ -168,6 +181,7 @@ object BleMeshManager {
         if (packet.senderPeerId.contentEquals(myPeerId)) return // our own broadcast, echoed back by a relay
         if (dedupCache.isDuplicate(packet.messageId.toHex())) return
 
+        lastActivityAtMs = System.currentTimeMillis()
         val senderHex = packet.senderPeerId.toHex()
         peerManager?.markSeen(senderHex)
 
