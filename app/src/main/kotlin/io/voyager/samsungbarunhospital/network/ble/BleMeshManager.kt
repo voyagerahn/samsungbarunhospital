@@ -1,6 +1,7 @@
 package io.voyager.samsungbarunhospital.network.ble
 
 import android.content.Context
+import io.voyager.samsungbarunhospital.data.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ object BleMeshManager {
     @Volatile private var lastActivityAtMs: Long = 0L
 
     private var myPeerId: ByteArray = ByteArray(BleMeshConstants.PEER_ID_SIZE)
+    @Volatile private var appContext: Context? = null
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val connectionManager = BleConnectionManager()
@@ -78,6 +80,7 @@ object BleMeshManager {
         mode = resolvedMode
         myPeerId = myPeerIdHex.hexToByteArray() ?: randomBytes(BleMeshConstants.PEER_ID_SIZE)
         val appContext = context.applicationContext
+        this.appContext = appContext
 
         val transportDelegate = object : BleTransportDelegate {
             override fun onRawPacketReceived(bytes: ByteArray, fromAddress: String) {
@@ -221,7 +224,13 @@ object BleMeshManager {
             packet
         }
 
-        if (effective.type == BlePacketType.ANNOUNCE) return
+        if (effective.type == BlePacketType.ANNOUNCE) {
+            // 관리자 화면의 "근처 기기 검색"이 peerId만으로는 사람이 알아볼 수 없으니, ANNOUNCE에
+            // 실려 온 태블릿 이름을 같이 기억해둔다(등록 화면에서 표시용).
+            val name = String(effective.payload, Charsets.UTF_8).trim()
+            if (name.isNotEmpty()) peerManager?.updateName(senderHex, name)
+            return
+        }
 
         val addressedToMe = effective.isBroadcast || effective.recipientPeerId.contentEquals(myPeerId)
         if (addressedToMe) {
@@ -239,21 +248,44 @@ object BleMeshManager {
         }
     }
 
+    private fun buildAnnouncePacket(): BlePacket {
+        // 태블릿 이름을 실어 보낸다 — "근처 기기 검색" 화면에서 peerId 대신 이 이름으로
+        // 사람이 알아볼 수 있게. 매번 새로 읽어서 관리자가 이름을 바꾸면 다음 ANNOUNCE부터 반영됨.
+        val name = appContext?.let { AppSettings.getTabletName(it) } ?: ""
+        return BlePacket(
+            type = BlePacketType.ANNOUNCE,
+            ttl = BleMeshConstants.DEFAULT_TTL,
+            senderPeerId = myPeerId,
+            recipientPeerId = BleMeshConstants.BROADCAST_RECIPIENT,
+            messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
+            payload = name.toByteArray(Charsets.UTF_8)
+        )
+    }
+
     private fun startAnnounceLoop() {
         announceJob?.cancel()
         announceJob = mainScope.launch {
             while (isActive) {
-                val announce = BlePacket(
-                    type = BlePacketType.ANNOUNCE,
-                    ttl = BleMeshConstants.DEFAULT_TTL,
-                    senderPeerId = myPeerId,
-                    recipientPeerId = BleMeshConstants.BROADCAST_RECIPIENT,
-                    messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
-                    payload = ByteArray(0)
-                )
-                sendPacket(announce, excludeAddress = null)
+                sendPacket(buildAnnouncePacket(), excludeAddress = null)
                 delay(BleMeshConstants.ANNOUNCE_INTERVAL_MS)
             }
         }
+    }
+
+    /** 관리자가 "근처 기기 검색"을 열었을 때 즉시 한 번 더 알려서, 30초 주기를 기다리지 않고도
+     *  검색 목록이 빨리 채워지게 한다. */
+    @JvmStatic
+    fun triggerAnnounceNow() {
+        if (!started) return
+        mainScope.launch { sendPacket(buildAnnouncePacket(), excludeAddress = null) }
+    }
+
+    /** peerId(hex)와 마지막으로 들은 이름(없으면 null). 관리자 화면의 "근처 기기 검색" 목록용. */
+    class DiscoveredPeer(@JvmField val peerId: String, @JvmField val name: String?)
+
+    @JvmStatic
+    fun getDiscoveredPeers(): List<DiscoveredPeer> {
+        val peers = peerManager ?: return emptyList()
+        return peers.listOnline().map { DiscoveredPeer(it.peerIdHex, it.name) }
     }
 }

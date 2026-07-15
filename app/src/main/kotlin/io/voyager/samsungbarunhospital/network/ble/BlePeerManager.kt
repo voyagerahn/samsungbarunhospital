@@ -19,7 +19,10 @@ class BlePeerManager(
     private val clock: () -> Long = System::currentTimeMillis,
     private val onPeerCameOnline: (peerIdHex: String) -> Unit
 ) {
+    class OnlinePeer(@JvmField val peerIdHex: String, @JvmField val name: String?)
+
     private val lastSeen = ConcurrentHashMap<String, Long>()
+    private val names = ConcurrentHashMap<String, String>()
     private var cleanupJob: Job? = null
 
     fun markSeen(peerIdHex: String) {
@@ -28,10 +31,19 @@ class BlePeerManager(
         if (!wasOnline) onPeerCameOnline(peerIdHex)
     }
 
+    /** ANNOUNCE 페이로드로 실려 온 표시 이름 — "근처 기기 검색" 화면에서 peerId 대신 보여줌. */
+    fun updateName(peerIdHex: String, name: String) {
+        names[peerIdHex] = name
+    }
+
     fun isOnline(peerIdHex: String): Boolean {
         val ts = lastSeen[peerIdHex] ?: return false
         return clock() - ts < BleMeshConstants.STALE_PEER_TIMEOUT_MS
     }
+
+    /** 현재 online으로 판정되는(최근 STALE_PEER_TIMEOUT_MS 이내에 본) peer 전체. */
+    fun listOnline(): List<OnlinePeer> =
+        lastSeen.keys.filter { isOnline(it) }.map { OnlinePeer(it, names[it]) }
 
     fun startCleanup() {
         cleanupJob?.cancel()
@@ -51,5 +63,6 @@ class BlePeerManager(
 
     fun clear() {
         lastSeen.clear()
+        names.clear()
     }
 }

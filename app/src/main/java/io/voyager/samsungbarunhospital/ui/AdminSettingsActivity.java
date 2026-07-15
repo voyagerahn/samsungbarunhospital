@@ -5,6 +5,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -20,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
+import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 import io.voyager.samsungbarunhospital.network.ConfigSync;
 import io.voyager.samsungbarunhospital.network.TcpSender;
@@ -37,10 +40,20 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private EditText[]   etMessages;
     private LinearLayout buttonListContainer;
     private LinearLayout nurseIpListContainer;
+    private LinearLayout bleOnlyNurseListContainer;
     private TextView     tvCurrentIp;
     private TextView     tvBleStatus;
     private SeekBar      seekAlarmVolume;
     private TextView     tvAlarmVolumeValue;
+
+    // 사이드바 내비게이션: 각 배열의 같은 인덱스끼리 한 세트(내비 항목 / 표시줄 / 라벨 / 페이지)
+    private View[]     navItems;
+    private View[]     navIndicators;
+    private TextView[] navLabels;
+    private View[]     navPages;
+    private static final int NAV_COLOR_SELECTED   = 0xFFFFD54F;
+    private static final int NAV_COLOR_UNSELECTED = 0xFFAAAAAA;
+    private static final int NAV_BG_SELECTED       = 0xFF1E1E38;
 
     // 글씨 크기 현재값 (sp) — +/- 버튼으로 조절
     private int szLeftRoom, szLeftMsg, szLeftTime;
@@ -57,8 +70,11 @@ public class AdminSettingsActivity extends AppCompatActivity {
         etPassword           = findViewById(R.id.etPassword);
         buttonListContainer  = findViewById(R.id.buttonListContainer);
         nurseIpListContainer = findViewById(R.id.nurseIpListContainer);
+        bleOnlyNurseListContainer = findViewById(R.id.bleOnlyNurseListContainer);
         tvCurrentIp          = findViewById(R.id.tvCurrentIp);
         tvBleStatus          = findViewById(R.id.tvBleStatus);
+
+        setupSidebarNav();
 
         etMessages = new EditText[]{
                 findViewById(R.id.etMsg1), findViewById(R.id.etMsg2),
@@ -131,6 +147,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
         // 간호사 설정 불러오기
         findViewById(R.id.btnLoadNurseConfig).setOnClickListener(v -> showNurseConfigPicker());
 
+        // BLE 전용 간호사 (한 번도 같은 네트워크였던 적 없는 경우)
+        populateBleOnlyNurseList();
+        findViewById(R.id.btnScanNearbyPeers).setOnClickListener(v -> showScanNearbyPeersDialog());
+
         refreshBleStatus();
         findViewById(R.id.btnRefreshBleStatus).setOnClickListener(v -> refreshBleStatus());
 
@@ -180,6 +200,47 @@ public class AdminSettingsActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == BUTTON_EDIT_REQUEST && resultCode == RESULT_OK) {
             populateButtonList();
+        }
+    }
+
+    /** 왼쪽 사이드바 카테고리 클릭 시 해당 페이지만 보이도록 전환한다. */
+    private void setupSidebarNav() {
+        navItems = new View[]{
+                findViewById(R.id.navDeviceInfo), findViewById(R.id.navComm),
+                findViewById(R.id.navDisplay), findViewById(R.id.navMessages),
+                findViewById(R.id.navButtons)
+        };
+        navIndicators = new View[]{
+                findViewById(R.id.navDeviceInfoIndicator), findViewById(R.id.navCommIndicator),
+                findViewById(R.id.navDisplayIndicator), findViewById(R.id.navMessagesIndicator),
+                findViewById(R.id.navButtonsIndicator)
+        };
+        navLabels = new TextView[]{
+                findViewById(R.id.navDeviceInfoLabel), findViewById(R.id.navCommLabel),
+                findViewById(R.id.navDisplayLabel), findViewById(R.id.navMessagesLabel),
+                findViewById(R.id.navButtonsLabel)
+        };
+        navPages = new View[]{
+                findViewById(R.id.pageDeviceInfo), findViewById(R.id.pageComm),
+                findViewById(R.id.pageDisplay), findViewById(R.id.pageMessages),
+                findViewById(R.id.pageButtons)
+        };
+
+        for (int i = 0; i < navItems.length; i++) {
+            final int index = i;
+            navItems[i].setOnClickListener(v -> selectNavPage(index));
+        }
+        selectNavPage(0);
+    }
+
+    private void selectNavPage(int selected) {
+        for (int i = 0; i < navItems.length; i++) {
+            boolean isSelected = i == selected;
+            navIndicators[i].setVisibility(isSelected ? View.VISIBLE : View.INVISIBLE);
+            navItems[i].setBackgroundColor(isSelected ? NAV_BG_SELECTED : 0x00000000);
+            navLabels[i].setTextColor(isSelected ? NAV_COLOR_SELECTED : NAV_COLOR_UNSELECTED);
+            navLabels[i].setTypeface(null, isSelected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            navPages[i].setVisibility(isSelected ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -326,6 +387,142 @@ public class AdminSettingsActivity extends AppCompatActivity {
             empty.setTextColor(0xFF888888);
             empty.setTextSize(14f);
             nurseIpListContainer.addView(empty);
+        }
+    }
+
+    private void populateBleOnlyNurseList() {
+        bleOnlyNurseListContainer.removeAllViews();
+        List<BleOnlyNurse> nurses = AppSettings.getBleOnlyNurses(this);
+
+        for (BleOnlyNurse nurse : nurses) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(0, 8, 0, 8);
+
+            TextView tvLabel = new TextView(this);
+            tvLabel.setText(nurse.label != null ? nurse.label : ("기기 " + nurse.peerId.substring(0, 8)));
+            tvLabel.setTextColor(0xFFFFFFFF);
+            tvLabel.setTextSize(16f);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            tvLabel.setLayoutParams(p);
+
+            Button btnDel = new Button(this);
+            btnDel.setText("삭제");
+            btnDel.setTextSize(13f);
+            btnDel.setTextColor(0xFFFFFFFF);
+            btnDel.setBackgroundColor(0xFFB71C1C);
+            btnDel.setPadding(24, 0, 24, 0);
+            btnDel.setOnClickListener(v -> {
+                AppSettings.removeBleOnlyNurse(this, nurse.peerId);
+                populateBleOnlyNurseList();
+            });
+
+            row.addView(tvLabel);
+            row.addView(btnDel);
+            bleOnlyNurseListContainer.addView(row);
+        }
+
+        if (nurses.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("BLE로 등록된 간호사가 없습니다.");
+            empty.setTextColor(0xFF888888);
+            empty.setTextSize(14f);
+            bleOnlyNurseListContainer.addView(empty);
+        }
+    }
+
+    /**
+     * 근처에서 BLE로 광고 중인(ANNOUNCE를 보낸 적 있는) 기기 목록을 보여주고, 하나를 골라 IP 없이
+     * peerId만으로 간호사로 등록한다. 다이얼로그가 떠 있는 동안 1.5초마다 목록을 새로 그려서
+     * 새로 감지되는 기기가 바로 반영되게 한다.
+     */
+    private void showScanNearbyPeersDialog() {
+        if (!BleMeshManager.isSupported(getApplicationContext())) {
+            Toast.makeText(this, "이 기기에서는 BLE를 사용할 수 없습니다.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        BleMeshManager.triggerAnnounceNow();
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 20, 40, 20);
+
+        TextView hint = new TextView(this);
+        hint.setText("등록할 간호사 태블릿 옆에서 이 화면을 열어두세요. 잠시 후 목록에 나타납니다.");
+        hint.setTextColor(0xFF888888);
+        hint.setTextSize(13f);
+        hint.setPadding(0, 0, 0, 16);
+        container.addView(hint);
+
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        container.addView(listContainer);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("근처 기기 검색")
+                .setView(container)
+                .setNegativeButton("닫기", null)
+                .create();
+
+        Handler handler = new Handler(Looper.getMainLooper());
+        Runnable[] refreshRef = new Runnable[1];
+        refreshRef[0] = () -> {
+            if (!dialog.isShowing()) return;
+            renderNearbyPeerList(listContainer, dialog);
+            handler.postDelayed(refreshRef[0], 1500);
+        };
+        dialog.setOnDismissListener(d -> handler.removeCallbacksAndMessages(null));
+        dialog.show();
+        refreshRef[0].run();
+    }
+
+    private void renderNearbyPeerList(LinearLayout listContainer, AlertDialog dialog) {
+        listContainer.removeAllViews();
+        List<String> alreadyRegistered = new ArrayList<>();
+        for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) alreadyRegistered.add(n.peerId);
+
+        List<BleMeshManager.DiscoveredPeer> peers = BleMeshManager.getDiscoveredPeers();
+        boolean any = false;
+        for (BleMeshManager.DiscoveredPeer peer : peers) {
+            if (alreadyRegistered.contains(peer.peerId)) continue;
+            any = true;
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(0, 12, 0, 12);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+            TextView tv = new TextView(this);
+            String display = (peer.name != null && !peer.name.isEmpty()) ? peer.name : ("기기 " + peer.peerId.substring(0, 8));
+            tv.setText(display);
+            tv.setTextColor(0xFFFFFFFF);
+            tv.setTextSize(16f);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            tv.setLayoutParams(p);
+
+            Button btnAdd = new Button(this);
+            btnAdd.setText("등록");
+            btnAdd.setTextSize(13f);
+            btnAdd.setTextColor(0xFFFFFFFF);
+            btnAdd.setBackgroundColor(0xFF2E7D32);
+            btnAdd.setOnClickListener(v -> {
+                AppSettings.addBleOnlyNurse(this, peer.peerId, display);
+                populateBleOnlyNurseList();
+                dialog.dismiss();
+                Toast.makeText(this, "\"" + display + "\"을(를) 간호사로 등록했습니다.", Toast.LENGTH_SHORT).show();
+            });
+
+            row.addView(tv);
+            row.addView(btnAdd);
+            listContainer.addView(row);
+        }
+
+        if (!any) {
+            TextView empty = new TextView(this);
+            empty.setText("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요...");
+            empty.setTextColor(0xFF888888);
+            empty.setTextSize(14f);
+            listContainer.addView(empty);
         }
     }
 

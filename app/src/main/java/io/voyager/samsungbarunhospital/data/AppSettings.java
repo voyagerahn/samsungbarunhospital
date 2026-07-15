@@ -3,6 +3,7 @@ package io.voyager.samsungbarunhospital.data;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 
 import org.json.JSONArray;
@@ -21,6 +22,7 @@ public class AppSettings {
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
     private static final String KEY_NURSE_BLE_PEER_IDS = "nurse_ble_peer_ids"; // {ip: peerIdHex}
+    private static final String KEY_BLE_ONLY_NURSES  = "ble_only_nurses"; // [{peerId, label}] — IP 없이 BLE로만 등록
     private static final String KEY_BLE_PEER_ID      = "ble_peer_id";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
     private static final String KEY_FULLSCREEN_PRIMARY = "fullscreen_primary";
@@ -175,6 +177,48 @@ public class AppSettings {
             JSONObject obj = existing != null ? new JSONObject(existing) : new JSONObject();
             obj.put(ip, peerIdHex);
             prefs(ctx).edit().putString(KEY_NURSE_BLE_PEER_IDS, obj.toString()).apply();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // ── BLE 전용 간호사 (IP 없이 근처 기기 검색으로 등록, 다른 네트워크라 TCP가 애초에 안 되는 경우) ──
+    public static List<BleOnlyNurse> getBleOnlyNurses(Context ctx) {
+        String json = prefs(ctx).getString(KEY_BLE_ONLY_NURSES, null);
+        if (json == null) return new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(json);
+            List<BleOnlyNurse> list = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                BleOnlyNurse n = BleOnlyNurse.fromJson(arr.getJSONObject(i));
+                if (!n.peerId.isEmpty()) list.add(n);
+            }
+            return list;
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    public static void addBleOnlyNurse(Context ctx, String peerId, String label) {
+        List<BleOnlyNurse> list = getBleOnlyNurses(ctx);
+        for (BleOnlyNurse n : list) {
+            if (n.peerId.equals(peerId)) return; // 이미 등록됨
+        }
+        list.add(new BleOnlyNurse(peerId, label));
+        saveBleOnlyNurses(ctx, list);
+    }
+
+    public static void removeBleOnlyNurse(Context ctx, String peerId) {
+        List<BleOnlyNurse> list = getBleOnlyNurses(ctx);
+        list.removeIf(n -> n.peerId.equals(peerId));
+        saveBleOnlyNurses(ctx, list);
+    }
+
+    private static void saveBleOnlyNurses(Context ctx, List<BleOnlyNurse> list) {
+        try {
+            JSONArray arr = new JSONArray();
+            for (BleOnlyNurse n : list) arr.put(n.toJson());
+            prefs(ctx).edit().putString(KEY_BLE_ONLY_NURSES, arr.toString()).apply();
         } catch (Exception e) {
             e.printStackTrace();
         }

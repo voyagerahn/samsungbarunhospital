@@ -1,494 +1,797 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1A2E">
+    android:background="#1A1A2E"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="12dp"
+        android:text="관리자 설정"
+        android:textColor="#FFFFFF"
+        android:textSize="24sp"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="32dp">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:text="관리자 설정"
-            android:textColor="#FFFFFF"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <!-- 카드 1: 기기 정보 -->
+        <!-- 왼쪽 사이드바 -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
+            android:layout_width="200dp"
+            android:layout_height="match_parent"
+            android:background="#15152A"
             android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:text="이 기기의 IP 주소"
-                android:textColor="#90CAF9"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvCurrentIp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#2D2D44"
-                android:padding="14dp"
-                android:text="—"
-                android:textColor="#FFD54F"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-        </LinearLayout>
-
-        <!-- 카드 2: 간호사 태블릿 (IP 목록 + 설정 불러오기) -->
-        <LinearLayout
-            android:id="@+id/nurseIpSection"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="간호사 태블릿 IP 목록"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="호출을 받을 간호사 태블릿 IP를 추가하세요"
-                android:textColor="#888888"
-                android:textSize="13sp" />
+            android:paddingTop="8dp">
 
             <LinearLayout
-                android:id="@+id/nurseIpListContainer"
+                android:id="@+id/navDeviceInfo"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-            <Button
-                android:id="@+id/btnAddNurseIp"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="8dp"
-                android:background="#37474F"
-                android:text="+ IP 추가"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="16dp"
-                android:background="#33FFFFFF" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="간호사 설정 불러오기"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="선택한 간호사 태블릿의 호출 메시지·버튼 설정을 이 기기로 불러옵니다"
-                android:textColor="#888888"
-                android:textSize="13sp" />
-
-            <Button
-                android:id="@+id/btnLoadNurseConfig"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="#37474F"
-                android:text="간호사 설정 불러오기"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-
-        </LinearLayout>
-
-        <!-- 카드 3: 근거리 보조 통신(BLE) 상태 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="근거리 보조 통신(BLE) 상태"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="같은 Wi-Fi가 아니어도 물리적으로 가까운 태블릿과 통신을 시도하는 보조 경로입니다"
-                android:textColor="#888888"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/tvBleStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:background="#2D2D44"
-                android:padding="14dp"
-                android:text="—"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:lineSpacingExtra="4dp" />
-
-            <Button
-                android:id="@+id/btnRefreshBleStatus"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="#37474F"
-                android:text="상태 새로고침"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-
-        </LinearLayout>
-
-        <!-- 카드 4: 알람 음량 (간호사 태블릿용) -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="알람 음량 (간호사 태블릿 전용)"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="호출 수신 시 음소거 상태여도 이 음량으로 알람이 울립니다"
-                android:textColor="#888888"
-                android:textSize="13sp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <SeekBar
-                    android:id="@+id/seekAlarmVolume"
+                <View
+                    android:id="@+id/navDeviceInfoIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="#1565C0"
+                    android:visibility="invisible" />
+
+                <TextView
+                    android:id="@+id/navDeviceInfoLabel"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:max="100"
-                    android:progress="80" />
-
-                <TextView
-                    android:id="@+id/tvAlarmVolumeValue"
-                    android:layout_width="56dp"
-                    android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text="80%"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="기본 정보"
                     android:textColor="#FFD54F"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
             </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- 카드 5: 간호사 화면 글씨 크기 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
+            <LinearLayout
+                android:id="@+id/navComm"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="간호사 화면 글씨 크기 (간호사 태블릿 전용)"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:text="+ / − 버튼으로 1단계씩 조절합니다. 숫자가 클수록 글씨가 커집니다."
-                android:textColor="#888888"
-                android:textSize="13sp" />
+                <View
+                    android:id="@+id/navCommIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="#1565C0"
+                    android:visibility="invisible" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="◀ 왼쪽 최우선 패널" android:textColor="#FFD54F" android:textSize="14sp" android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/navCommLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="통신 설정"
+                    android:textColor="#AAAAAA"
+                    android:textSize="16sp" />
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="호실 이름 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnLeftRoomMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvLeftRoomSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnLeftRoomPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
             </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="메시지 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnLeftMsgMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvLeftMsgSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnLeftMsgPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="20dp">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="대기 시간 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnLeftTimeMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvLeftTimeSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnLeftTimePlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginBottom="16dp"
-                android:background="#33FFFFFF" />
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="▶ 오른쪽 목록 패널" android:textColor="#90CAF9" android:textSize="14sp" android:textStyle="bold" />
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="호실 이름 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnListRoomMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvListRoomSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnListRoomPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="메시지 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnListMsgMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvListMsgSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnListMsgPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal">
-                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="시간 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
-                <Button android:id="@+id/btnListTimeMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-                <TextView android:id="@+id/tvListTimeSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
-                <Button android:id="@+id/btnListTimePlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- 카드 6: 태블릿 기본 정보 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="태블릿 설정"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="이 태블릿의 이름 (예: 101호, 응급실 1번)"
-                android:textColor="#BBBBBB"
-                android:textSize="14sp" />
-
-            <EditText
-                android:id="@+id/etTabletName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
-                android:background="#2D2D44"
-                android:hint="예) 101호"
-                android:inputType="text"
-                android:padding="14dp"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#666688"
-                android:textSize="18sp" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginBottom="16dp"
-                android:background="#33FFFFFF" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="관리자 비밀번호 변경"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="비워두면 기존 비밀번호 유지"
-                android:textColor="#888888"
-                android:textSize="13sp" />
-
-            <EditText
-                android:id="@+id/etPassword"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#2D2D44"
-                android:hint="새 비밀번호 (숫자)"
-                android:inputType="numberPassword"
-                android:padding="14dp"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#666688"
-                android:textSize="18sp" />
-
-        </LinearLayout>
-
-        <!-- 카드 7: 호출 메시지 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="호출 메시지 설정 (최대 10개)"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:text="입력한 메시지만 환자 화면에 버튼으로 표시됩니다"
-                android:textColor="#888888"
-                android:textSize="13sp" />
-
-            <EditText android:id="@+id/etMsg1"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 1"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg2"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 2"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg3"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 3"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg4"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 4"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg5"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 5"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg6"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 6"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg7"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 7"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg8"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 8"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg9"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 9"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-            <EditText android:id="@+id/etMsg10" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="#2D2D44" android:hint="메시지 10" android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
-
-        </LinearLayout>
-
-        <!-- 카드 8: 앱 버튼 관리 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:background="@drawable/bg_card"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="앱 버튼 관리 (최대 6개)"
-                android:textColor="#90CAF9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="메인 화면에 표시할 버튼을 추가·편집·삭제합니다"
-                android:textColor="#888888"
-                android:textSize="13sp" />
 
             <LinearLayout
-                android:id="@+id/buttonListContainer"
+                android:id="@+id/navDisplay"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btnAddButton"
+                <View
+                    android:id="@+id/navDisplayIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="#1565C0"
+                    android:visibility="invisible" />
+
+                <TextView
+                    android:id="@+id/navDisplayLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="화면·알람 설정"
+                    android:textColor="#AAAAAA"
+                    android:textSize="16sp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/navMessages"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="8dp"
-                android:background="#2E7D32"
-                android:text="+ 버튼 추가"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp" />
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/navMessagesIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="#1565C0"
+                    android:visibility="invisible" />
+
+                <TextView
+                    android:id="@+id/navMessagesLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="호출 메시지"
+                    android:textColor="#AAAAAA"
+                    android:textSize="16sp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/navButtons"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/navButtonsIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="#1565C0"
+                    android:visibility="invisible" />
+
+                <TextView
+                    android:id="@+id/navButtonsLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="앱 버튼 관리"
+                    android:textColor="#AAAAAA"
+                    android:textSize="16sp" />
+
+            </LinearLayout>
 
         </LinearLayout>
+
+        <!-- 오른쪽 설정 내용 -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1">
+
+            <!-- 페이지: 기본 정보 -->
+            <ScrollView
+                android:id="@+id/pageDeviceInfo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 기기 정보 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="6dp"
+                            android:text="이 기기의 IP 주소"
+                            android:textColor="#90CAF9"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvCurrentIp"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="#2D2D44"
+                            android:padding="14dp"
+                            android:text="—"
+                            android:textColor="#FFD54F"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <!-- 카드: 태블릿 기본 정보 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:text="태블릿 설정"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="이 태블릿의 이름 (예: 101호, 응급실 1번)"
+                            android:textColor="#BBBBBB"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etTabletName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="20dp"
+                            android:background="#2D2D44"
+                            android:hint="예) 101호"
+                            android:inputType="text"
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#666688"
+                            android:textSize="18sp" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginBottom="16dp"
+                            android:background="#33FFFFFF" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:text="관리자 비밀번호 변경"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="비워두면 기존 비밀번호 유지"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <EditText
+                            android:id="@+id/etPassword"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="#2D2D44"
+                            android:hint="새 비밀번호 (숫자)"
+                            android:inputType="numberPassword"
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#666688"
+                            android:textSize="18sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 페이지: 통신 설정 -->
+            <ScrollView
+                android:id="@+id/pageComm"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 간호사 태블릿 (IP 목록 + 설정 불러오기) -->
+                    <LinearLayout
+                        android:id="@+id/nurseIpSection"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="간호사 태블릿 IP 목록"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="호출을 받을 간호사 태블릿 IP를 추가하세요"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:id="@+id/nurseIpListContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+
+                        <Button
+                            android:id="@+id/btnAddNurseIp"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#37474F"
+                            android:text="+ IP 추가"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginBottom="16dp"
+                            android:background="#33FFFFFF" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="간호사 설정 불러오기"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="선택한 간호사 태블릿의 호출 메시지·버튼 설정을 이 기기로 불러옵니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <Button
+                            android:id="@+id/btnLoadNurseConfig"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:background="#37474F"
+                            android:text="간호사 설정 불러오기"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                    </LinearLayout>
+
+                    <!-- 카드: BLE 전용 간호사 (한 번도 같은 네트워크였던 적 없는 경우) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="BLE 전용 간호사"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="같은 네트워크였던 적이 한 번도 없어 IP를 모를 때, 근처 기기를 직접 검색해서 등록합니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:id="@+id/bleOnlyNurseListContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+
+                        <Button
+                            android:id="@+id/btnScanNearbyPeers"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#37474F"
+                            android:text="근처 기기 검색"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                    </LinearLayout>
+
+                    <!-- 카드: 근거리 보조 통신(BLE) 상태 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="근거리 보조 통신(BLE) 상태"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="같은 Wi-Fi가 아니어도 물리적으로 가까운 태블릿과 통신을 시도하는 보조 경로입니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tvBleStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="10dp"
+                            android:background="#2D2D44"
+                            android:padding="14dp"
+                            android:text="—"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:lineSpacingExtra="4dp" />
+
+                        <Button
+                            android:id="@+id/btnRefreshBleStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:background="#37474F"
+                            android:text="상태 새로고침"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 페이지: 화면·알람 설정 -->
+            <ScrollView
+                android:id="@+id/pageDisplay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 알람 음량 (간호사 태블릿용) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="알람 음량 (간호사 태블릿 전용)"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="호출 수신 시 음소거 상태여도 이 음량으로 알람이 울립니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <SeekBar
+                                android:id="@+id/seekAlarmVolume"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:max="100"
+                                android:progress="80" />
+
+                            <TextView
+                                android:id="@+id/tvAlarmVolumeValue"
+                                android:layout_width="56dp"
+                                android:layout_height="wrap_content"
+                                android:gravity="end"
+                                android:text="80%"
+                                android:textColor="#FFD54F"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- 카드: 간호사 화면 글씨 크기 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="간호사 화면 글씨 크기 (간호사 태블릿 전용)"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:text="+ / − 버튼으로 1단계씩 조절합니다. 숫자가 클수록 글씨가 커집니다."
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="◀ 왼쪽 최우선 패널" android:textColor="#FFD54F" android:textSize="14sp" android:textStyle="bold" />
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="호실 이름 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnLeftRoomMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvLeftRoomSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnLeftRoomPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="메시지 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnLeftMsgMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvLeftMsgSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnLeftMsgPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="20dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="대기 시간 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnLeftTimeMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvLeftTimeSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#FFD54F" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnLeftTimePlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginBottom="16dp"
+                            android:background="#33FFFFFF" />
+
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="▶ 오른쪽 목록 패널" android:textColor="#90CAF9" android:textSize="14sp" android:textStyle="bold" />
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="호실 이름 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnListRoomMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvListRoomSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnListRoomPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="메시지 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnListMsgMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvListMsgSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnListMsgPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="시간 크기" android:textColor="#CCCCCC" android:textSize="14sp" />
+                            <Button android:id="@+id/btnListTimeMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                            <TextView android:id="@+id/tvListTimeSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="#90CAF9" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnListTimePlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="#37474F" android:textColor="#FFFFFF" android:padding="0dp" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 페이지: 호출 메시지 -->
+            <ScrollView
+                android:id="@+id/pageMessages"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 호출 메시지 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="호출 메시지 설정 (최대 10개)"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:text="입력한 메시지만 환자 화면에 버튼으로 표시됩니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <EditText android:id="@+id/etMsg1"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 1"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg2"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 2"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg3"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 3"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg4"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 4"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg5"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 5"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg6"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 6"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg7"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 7"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg8"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 8"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg9"  android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="#2D2D44" android:hint="메시지 9"  android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+                        <EditText android:id="@+id/etMsg10" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="#2D2D44" android:hint="메시지 10" android:inputType="text" android:padding="14dp" android:textColor="#FFFFFF" android:textColorHint="#666688" android:textSize="16sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 페이지: 앱 버튼 관리 -->
+            <ScrollView
+                android:id="@+id/pageButtons"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 앱 버튼 관리 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="앱 버튼 관리 (최대 6개)"
+                            android:textColor="#90CAF9"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="메인 화면에 표시할 버튼을 추가·편집·삭제합니다"
+                            android:textColor="#888888"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:id="@+id/buttonListContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+
+                        <Button
+                            android:id="@+id/btnAddButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#2E7D32"
+                            android:text="+ 버튼 추가"
+                            android:textColor="#FFFFFF"
+                            android:textSize="16sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- 하단 고정 저장/취소 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#15152A"
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="56dp"
             android:background="#1565C0"
             android:text="저장"
             android:textColor="#FFFFFF"
-            android:textSize="20sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
 
         <Button
             android:id="@+id/btnCancel"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="12dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
             android:background="#444466"
             android:text="저장하지 않고 나가기"
             android:textColor="#CCCCCC"
-            android:textSize="16sp" />
+            android:textSize="15sp" />
 
     </LinearLayout>
-</ScrollView>
+
+</LinearLayout>

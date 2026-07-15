@@ -27,6 +27,7 @@ import android.widget.ViewFlipper;
 
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
+import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 import io.voyager.samsungbarunhospital.network.AlertReceiverService;
 import io.voyager.samsungbarunhospital.network.TcpSender;
@@ -348,8 +349,9 @@ public class MainActivity extends AppCompatActivity {
     // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
     private void sendCallMessage(String message) {
         List<String> targets = AppSettings.getNurseIps(this);
+        List<BleOnlyNurse> bleOnlyNurses = AppSettings.getBleOnlyNurses(this);
         boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
-        if (targets.isEmpty() && !bleAvailable) {
+        if (targets.isEmpty() && bleOnlyNurses.isEmpty()) {
             Toast.makeText(this, "등록된 간호사 태블릿이 없습니다.\n관리자 설정에서 IP를 추가하세요.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -360,8 +362,13 @@ public class MainActivity extends AppCompatActivity {
         String payload = tabletName + "|" + message + "|" + callId;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
 
+        // BLE 전용 간호사는 TCP 경로가 아예 없으므로(한 번도 같은 네트워크였던 적 없음),
+        // TCP 성공/실패와 무관하게 항상 시도한다.
+        if (bleAvailable && !bleOnlyNurses.isEmpty()) {
+            sendBleToBleOnlyNurses(bleOnlyNurses, payload, /*isCancel=*/false);
+        }
+
         if (targets.isEmpty()) {
-            // 등록된 간호사 IP 자체가 없음 — BLE peerId를 학습할 방법도 없었으니 BLE로도 못 보냄
             activeCallIds.add(callId);
             activeCallMsgs.add(message);
             refreshCallBanner();
@@ -467,9 +474,26 @@ public class MainActivity extends AppCompatActivity {
      * 건너뛴다(관리자 설정에서 그 간호사 IP를 추가/설정 불러오기 하면 학습됨).
      */
     private void sendBleToKnownNursePeers(List<String> nurseIps, String payload, boolean isCancel) {
+        List<String> peerIds = new ArrayList<>();
         for (String ip : nurseIps) {
             String peerId = AppSettings.getNursePeerId(this, ip);
-            if (peerId == null) continue;
+            if (peerId != null) peerIds.add(peerId);
+        }
+        sendBleUnicast(peerIds, payload, isCancel);
+    }
+
+    /**
+     * IP를 한 번도 몰랐던(한 번도 같은 네트워크였던 적 없는) 간호사 — "근처 기기 검색"으로 직접
+     * 등록된 목록. TCP 경로 자체가 없으므로 TCP 성공/실패와 무관하게 항상 BLE로 시도한다.
+     */
+    private void sendBleToBleOnlyNurses(List<BleOnlyNurse> nurses, String payload, boolean isCancel) {
+        List<String> peerIds = new ArrayList<>();
+        for (BleOnlyNurse n : nurses) peerIds.add(n.peerId);
+        sendBleUnicast(peerIds, payload, isCancel);
+    }
+
+    private void sendBleUnicast(List<String> peerIds, String payload, boolean isCancel) {
+        for (String peerId : peerIds) {
             if (isCancel) {
                 BleMeshManager.sendCancelToPeer(peerId, payload);
             } else {
@@ -481,7 +505,12 @@ public class MainActivity extends AppCompatActivity {
     private void cancelCall(String callId, String message) {
         String cancelPayload = "CANCEL|" + callId;
         List<String> targets = AppSettings.getNurseIps(this);
+        List<BleOnlyNurse> bleOnlyNurses = AppSettings.getBleOnlyNurses(this);
         boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
+
+        if (bleAvailable && !bleOnlyNurses.isEmpty()) {
+            sendBleToBleOnlyNurses(bleOnlyNurses, cancelPayload, /*isCancel=*/true);
+        }
 
         if (!targets.isEmpty()) {
             AtomicInteger done    = new AtomicInteger(0);

@@ -101,15 +101,28 @@ Java 쪽 신규/변경 파일: `model/CallItem.java`(senderPeerId 필드 추가)
 - `data/AppSettings.java`: `KEY_NURSE_BLE_PEER_IDS`(IP→peerId 매핑 JSON) 신설. `getNursePeerId()`/`saveNursePeerId()`.
 - `ui/AdminSettingsActivity.java`: IP 추가 시(`learnNurseBlePeerId`) + "설정 불러오기" 시 모두 peerId 학습 시도(백그라운드, 실패해도 조용히 무시).
 - `network/ble/BleMeshManager.kt`: `broadcastCall`/`broadcastCancel` 삭제, `sendCallToPeer`/`sendCancelToPeer`(둘 다 `sendConfirmed`와 같은 `sendUnicast` 헬퍼 공유) 신설 — 셋 다 특정 peerId로만 유니캐스트.
-- `ui/MainActivity.java`: `sendBleToKnownNursePeers()` — 등록된 간호사 IP 중 peerId를 학습해둔 것에게만 개별 유니캐스트. **peerId를 모르는 간호사는 BLE 폴백 대상에서 그냥 빠짐**(모르는 상대에게 broadcast로 흘리는 것보다 안전한 선택).
+- `ui/MainActivity.java`: `sendBleToKnownNursePeers()` — 등록된 간호사 IP 중 peerId를 학습해둔 것에게만 개별 유니캐스트. **peerId를 모르는 간호사는 이 경로에서는 그냥 빠짐**(모르는 상대에게 broadcast로 흘리는 것보다 안전한 선택) — 대신 아래 "BLE 전용 간호사" 경로로 커버됨.
 
-**중요한 남은 한계**: 이 방식은 **한 번이라도 TCP로 그 간호사와 통신에 성공한 적이 있어야** BLE peerId를 학습할 수 있음. 처음부터 한 번도 같은 네트워크였던 적이 없는 간호사-환자 쌍은 BLE로도 서로를 못 찾음(peerId를 모르니 유니캐스트 대상 자체가 안 생김). 병원 배치상 IP 등록은 보통 같은 네트워크에서 최초 설정하므로 실무 영향은 낮다고 판단했지만, 실기기 검증 시 반드시 확인 필요.
+**처음엔 놓쳤던 한계, 지금은 해결됨**: TCP 기반 peerId 학습은 한 번이라도 같은 네트워크에서 통신에 성공한 적이 있어야만 동작한다. **환자 태블릿이 병원 최초 설정 때부터 간호사와 아예 다른 네트워크에 있는 경우**(실제로 존재하는 시나리오로 확인됨)는 TCP가 원천적으로 안 되니 이 방법으로는 peerId를 영영 못 배움. 아래 "BLE 전용 간호사" 기능으로 별도 해결.
+
+### BLE 전용 간호사 — 근처 기기 검색으로 직접 등록 (2026-07-16, IP/TCP 전혀 불필요)
+
+한 번도 같은 네트워크였던 적 없는 간호사-환자 쌍을 위한 경로. bluetooth 기기 페어링과 같은 방식 — 관리자가 등록하려는 간호사 태블릿 물리적으로 가까운 곳에서 "근처 기기 검색"을 열면, ANNOUNCE로 감지된 기기 목록(이름 표시)이 뜨고 하나를 골라 IP 없이 peerId만으로 등록.
+
+- `network/ble/BlePacket.kt`/`BleMeshManager.kt`: ANNOUNCE payload가 빈 배열이었던 것을 `AppSettings.getTabletName()`(매 전송 시점에 새로 읽음)으로 변경 — 사람이 알아볼 수 있는 이름 없이는 검색 목록이 무의미하기 때문.
+- `network/ble/BlePeerManager.kt`: `updateName(peerIdHex, name)` — ANNOUNCE에서 받은 이름을 peerId별로 기억. `listOnline(): List<OnlinePeer>` — 현재 online(최근 `STALE_PEER_TIMEOUT_MS` 이내 감지)인 peer 전체를 이름과 함께 반환.
+- `network/ble/BleMeshManager.kt`: `getDiscoveredPeers()`(Java에서 쓰는 `DiscoveredPeer(peerId, name)` 리스트), `triggerAnnounceNow()`(관리자가 검색 화면을 열 때 30초 주기를 안 기다리고 즉시 한 번 더 알림 — 검색 체감 속도 개선용).
+- `model/BleOnlyNurse.java`(신규): `peerId` + `label`(등록 시점 이름 스냅샷). `data/AppSettings.java`: `KEY_BLE_ONLY_NURSES` 저장소, `getBleOnlyNurses/addBleOnlyNurse/removeBleOnlyNurse`.
+- `ui/AdminSettingsActivity.java`: "통신 설정" 페이지에 "BLE 전용 간호사" 카드 신설(`bleOnlyNurseListContainer`, `btnScanNearbyPeers`). `showScanNearbyPeersDialog()`가 다이얼로그 열려있는 동안 1.5초마다 `getDiscoveredPeers()`를 다시 그려서 새로 감지되는 기기를 반영, 이미 등록된 peerId는 목록에서 제외.
+- `ui/MainActivity.java`: `sendBleToBleOnlyNurses()` — TCP 경로가 원천적으로 없으므로(다른 네트워크) TCP 성공/실패와 무관하게 **항상** 시도. `sendCallMessage()`/`cancelCall()`이 IP 기반 폴백(`sendBleToKnownNursePeers`)과 별개로 병행 호출.
+- **의도적으로 범위 제한**: 등록만 지원하고, 관리자 화면에 실시간 "몇 홉 거리에 있는지" 같은 mesh 시각화는 추가 안 함(BLE 진단 패널과 동일하게 가벼운 수준 유지).
 
 ### 다음에 이어서 할 일
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.
 - 위 "알려진 한계" 2번(연결 캡 8개)·3번(하드웨어 advertise 미지원) — 실기기에서 문제로 확인되면 우선 대응 필요.
 - "간호사 설정 불러오기" 기능도 실기기(또는 에뮬레이터 2대)로 실제 요청→응답→적용 흐름 검증 필요 — 지금까지는 유닛테스트(`ConfigSyncTest`)와 빌드 성공만 확인됨.
 - BLE CALL 유니캐스트 타겟팅 실기기 검증: 환자 태블릿 3대(간호사 역할 1대 + 관계없는 환자 역할 2대)로, 관계없는 환자 태블릿들이 중계는 하되 자기 화면에는 절대 호출을 안 띄우는지 확인 필요.
+- "근처 기기 검색"(BLE 전용 간호사 등록) 실기기 검증: ANNOUNCE 이름이 실제로 목록에 뜨는지, `triggerAnnounceNow()`로 체감 대기시간이 줄어드는지, 등록 후 실제로 다른 네트워크 상황(Wi-Fi 끄고)에서 호출이 도달하는지.
 
 ### 개발 환경 참고
 adb 경로가 PATH에 없음 — `$HOME/Library/Android/sdk/platform-tools/adb`로 직접 호출. 에뮬레이터 실행 중이면 `adb devices -l`로 확인 후 `adb install -r app/build/outputs/apk/debug/app-debug.apk`, `adb shell monkey -p io.voyager.samsungbarunhospital -c android.intent.category.LAUNCHER 1`(실행), `adb exec-out screencap -p > 파일.png`(스크린샷)로 실제 동작을 직접 확인할 수 있었음.
