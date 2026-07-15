@@ -20,6 +20,7 @@ public class AppSettings {
     private static final String KEY_PASSWORD        = "admin_password";
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
+    private static final String KEY_NURSE_BLE_PEER_IDS = "nurse_ble_peer_ids"; // {ip: peerIdHex}
     private static final String KEY_BLE_PEER_ID      = "ble_peer_id";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
     private static final String KEY_FULLSCREEN_PRIMARY = "fullscreen_primary";
@@ -144,6 +145,36 @@ public class AppSettings {
             JSONArray arr = new JSONArray();
             for (String ip : ips) arr.put(ip);
             prefs(ctx).edit().putString(KEY_NURSE_IPS, arr.toString()).apply();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 등록된 간호사 IP가 BLE로도 도달 가능할 때, 그 태블릿의 BLE peerId(16자 hex)를 기억해둔다.
+     * TCP가 한 번이라도 성공했을 때(IP 추가 시, 설정 불러오기 시) 학습해서 저장해두고, 이후 BLE로
+     * 폴백 전송할 때 이 peerId로 콕 집어서(유니캐스트) 보낸다 — 그래야 근처의 다른 환자 태블릿이
+     * "나한테 온 호출"로 착각해 자기 화면에 알림을 띄우는 일이 없다. 학습된 적 없는 간호사는 BLE
+     * 폴백 대상에서 그냥 빠진다(등록 안 된 간호사에게 broadcast로 흘리는 것보다 안전한 선택).
+     */
+    public static String getNursePeerId(Context ctx, String ip) {
+        String json = prefs(ctx).getString(KEY_NURSE_BLE_PEER_IDS, null);
+        if (json == null) return null;
+        try {
+            String peerId = new JSONObject(json).optString(ip, "");
+            return peerId.isEmpty() ? null : peerId;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static void saveNursePeerId(Context ctx, String ip, String peerIdHex) {
+        if (peerIdHex == null || peerIdHex.isEmpty()) return;
+        try {
+            String existing = prefs(ctx).getString(KEY_NURSE_BLE_PEER_IDS, null);
+            JSONObject obj = existing != null ? new JSONObject(existing) : new JSONObject();
+            obj.put(ip, peerIdHex);
+            prefs(ctx).edit().putString(KEY_NURSE_BLE_PEER_IDS, obj.toString()).apply();
         } catch (Exception e) {
             e.printStackTrace();
         }

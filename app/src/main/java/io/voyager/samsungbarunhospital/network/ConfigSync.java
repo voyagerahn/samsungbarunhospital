@@ -36,6 +36,10 @@ public final class ConfigSync {
         try {
             JSONObject obj = new JSONObject();
             obj.put("version", CURRENT_VERSION);
+            // 이 기기의 BLE peerId도 같이 실어 보낸다 — 요청한 쪽(환자 태블릿)이 이걸 저장해두면,
+            // 나중에 같은 네트워크가 아니어서 BLE로 폴백할 때 "이 간호사 태블릿"을 콕 집어서
+            // (브로드캐스트가 아니라 유니캐스트로) 보낼 수 있다. BLE 미지원 기기는 빈 문자열.
+            obj.put("blePeerId", AppSettings.getOrCreateBlePeerId(ctx));
 
             JSONArray messages = new JSONArray();
             for (String m : AppSettings.getCallMessages(ctx)) messages.put(m);
@@ -60,10 +64,13 @@ public final class ConfigSync {
     public static final class RemoteConfig {
         public final List<String> messages;
         public final List<ButtonConfig> buttons;
+        /** 응답한 기기의 BLE peerId(16자 hex). 구버전 응답 등으로 없으면 null. */
+        public final String blePeerId;
 
-        RemoteConfig(List<String> messages, List<ButtonConfig> buttons) {
+        RemoteConfig(List<String> messages, List<ButtonConfig> buttons, String blePeerId) {
             this.messages = messages;
             this.buttons = buttons;
+            this.blePeerId = blePeerId;
         }
     }
 
@@ -104,7 +111,9 @@ public final class ConfigSync {
                 }
             }
 
-            return new RemoteConfig(messages, buttons);
+            String blePeerId = obj.optString("blePeerId", "");
+
+            return new RemoteConfig(messages, buttons, blePeerId.isEmpty() ? null : blePeerId);
         } catch (Exception e) {
             return null;
         }

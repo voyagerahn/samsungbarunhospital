@@ -198,6 +198,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
                         ips.add(ip);
                         AppSettings.saveNurseIps(this, ips);
                         populateNurseIpList();
+                        learnNurseBlePeerId(ip);
                     } else {
                         Toast.makeText(this, "이미 등록된 IP입니다.", Toast.LENGTH_SHORT).show();
                     }
@@ -230,8 +231,24 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 Toast.makeText(this, "설정을 가져오지 못했습니다. 연결 상태를 확인하세요.", Toast.LENGTH_LONG).show();
                 return;
             }
+            AppSettings.saveNursePeerId(this, nurseIp, remote.blePeerId);
             confirmApplyRemoteConfig(remote);
         }));
+    }
+
+    /**
+     * IP를 새로 등록할 때 백그라운드로 한 번 TCP 접속해서 그 간호사 태블릿의 BLE peerId를
+     * 미리 학습해둔다(같은 화면에 이미 있는 "설정 불러오기"와 같은 프로토콜 재사용, 조용히
+     * 시도만 하고 실패해도 안내 없음 — 지금 당장 필요한 게 아니라 "나중에 같은 네트워크가
+     * 아닐 때 BLE로 이 태블릿을 콕 집어 부를 수 있도록" 미리 준비해두는 것뿐이라서).
+     */
+    private void learnNurseBlePeerId(String nurseIp) {
+        TcpSender.requestConfig(nurseIp, rawResponse -> {
+            ConfigSync.RemoteConfig remote = ConfigSync.parseResponsePayload(rawResponse);
+            if (remote != null && remote.blePeerId != null) {
+                AppSettings.saveNursePeerId(this, nurseIp, remote.blePeerId);
+            }
+        });
     }
 
     private void confirmApplyRemoteConfig(ConfigSync.RemoteConfig remote) {

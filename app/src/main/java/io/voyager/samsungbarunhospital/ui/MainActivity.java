@@ -361,8 +361,7 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
 
         if (targets.isEmpty()) {
-            // 등록된 간호사 IP 자체가 없음 — 같은 네트워크로 닿을 방법이 없으니 BLE로만 시도
-            if (bleAvailable) BleMeshManager.broadcastCall(payload);
+            // 등록된 간호사 IP 자체가 없음 — BLE peerId를 학습할 방법도 없었으니 BLE로도 못 보냄
             activeCallIds.add(callId);
             activeCallMsgs.add(message);
             refreshCallBanner();
@@ -382,7 +381,7 @@ public class MainActivity extends AppCompatActivity {
                     // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
                     // 실패했을 때만 BLE로 폴백.
                     if (success.get() == 0 && bleAvailable) {
-                        BleMeshManager.broadcastCall(payload);
+                        sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
                     }
                     runOnUiThread(() -> {
                         if (success.get() > 0 || bleAvailable) {
@@ -461,14 +460,30 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * TCP가 다 실패했을 때의 BLE 폴백 — 등록된 간호사 IP 중 BLE peerId를 학습해둔 것에게만
+     * 콕 집어서(유니캐스트) 보낸다. 아무한테나 broadcast하면 근처의 다른 환자 태블릿도 "나한테
+     * 온 호출"로 착각해서 자기 화면에 알림을 띄우게 되므로, peerId를 모르는 간호사는 그냥
+     * 건너뛴다(관리자 설정에서 그 간호사 IP를 추가/설정 불러오기 하면 학습됨).
+     */
+    private void sendBleToKnownNursePeers(List<String> nurseIps, String payload, boolean isCancel) {
+        for (String ip : nurseIps) {
+            String peerId = AppSettings.getNursePeerId(this, ip);
+            if (peerId == null) continue;
+            if (isCancel) {
+                BleMeshManager.sendCancelToPeer(peerId, payload);
+            } else {
+                BleMeshManager.sendCallToPeer(peerId, payload);
+            }
+        }
+    }
+
     private void cancelCall(String callId, String message) {
         String cancelPayload = "CANCEL|" + callId;
         List<String> targets = AppSettings.getNurseIps(this);
         boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
 
-        if (targets.isEmpty()) {
-            if (bleAvailable) BleMeshManager.broadcastCancel(cancelPayload);
-        } else {
+        if (!targets.isEmpty()) {
             AtomicInteger done    = new AtomicInteger(0);
             AtomicInteger success = new AtomicInteger(0);
             int total = targets.size();
@@ -477,7 +492,7 @@ public class MainActivity extends AppCompatActivity {
                     if (ok) success.incrementAndGet();
                     // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
                     if (done.incrementAndGet() == total && success.get() == 0 && bleAvailable) {
-                        BleMeshManager.broadcastCancel(cancelPayload);
+                        sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
                     }
                 });
             }

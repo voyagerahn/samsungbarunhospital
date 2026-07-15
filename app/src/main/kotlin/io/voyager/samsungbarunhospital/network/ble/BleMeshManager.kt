@@ -13,9 +13,10 @@ import kotlinx.coroutines.launch
  * Single facade the (Java) call-flow code talks to. Wires the GATT transport
  * ([BleGattServerManager]/[BleGattClientManager]) to the pure relay/dedup/fragmentation/
  * store-forward logic, and exposes only what MainActivity/CallQueueActivity/
- * AlertReceiverService need: start/stop, broadcastCall/broadcastCancel/sendConfirmed, and a
- * listener for incoming payload strings (the existing "TabletName|Message|CallId" wire format,
- * unchanged from TcpSender/AlertReceiverService).
+ * AlertReceiverService need: start/stop, sendCallToPeer/sendCancelToPeer/sendConfirmed
+ * (all unicast to a known peerId, never a blind broadcast — see those functions' kdoc for why),
+ * and a listener for incoming payload strings (the existing "TabletName|Message|CallId" wire
+ * format, unchanged from TcpSender/AlertReceiverService).
  *
  * All public functions are no-ops when [getMode] resolves to [BleMode.UNSUPPORTED] — callers
  * don't need to guard every call site themselves, just check [isSupported] once for UI purposes.
@@ -129,54 +130,50 @@ object BleMeshManager {
 
     // Java(@JvmStatic) 호출부는 suspend 함수를 직접 부를 수 없으므로, 여기서 mainScope에
     // launch만 하고 즉시 반환한다 — 실제 GATT write와 그 완료 대기는 코루틴 안에서 일어난다.
+    //
+    // CALL/CANCEL/CONFIRMED 전부 recipientPeerId를 BROADCAST가 아니라 특정 peerId로 지정해서
+    // 보낸다(유니캐스트). 중간에 있는 기기들은 여전히 flood로 중계하지만(그래야 물리적으로 먼
+    // 목적지까지 닿음), addressedToMe가 아닌 기기는 자기 화면에 표시하지 않고 그냥 넘긴다 —
+    // 그래서 근처의 다른 환자 태블릿이 "나한테 온 호출"로 착각해 자기 화면에 알림을 띄우는
+    // 일이 없다(bitchat의 recipientID/isPacketAddressedToMe와 같은 패턴).
+
+    /** 호출을 보낼 간호사 태블릿의 BLE peerId를 모르면(TCP로 한 번도 학습한 적 없으면) 호출 못함. */
+    @JvmStatic
+    fun sendCallToPeer(recipientPeerIdHex: String, payload: String) =
+        sendUnicast(BlePacketType.CALL, recipientPeerIdHex, payload, cacheIfOffline = false)
 
     @JvmStatic
-    fun broadcastCall(payload: String) {
-        if (!started) return
-        mainScope.launch { broadcast(BlePacketType.CALL, payload) }
-    }
-
-    @JvmStatic
-    fun broadcastCancel(payload: String) {
-        if (!started) return
-        mainScope.launch { broadcast(BlePacketType.CANCEL, payload) }
-    }
+    fun sendCancelToPeer(recipientPeerIdHex: String, payload: String) =
+        sendUnicast(BlePacketType.CANCEL, recipientPeerIdHex, payload, cacheIfOffline = false)
 
     /** Sends a unicast CONFIRMED reply, or caches it via [BleStoreForwardCache] if the recipient is currently offline. */
     @JvmStatic
-    fun sendConfirmed(recipientPeerIdHex: String, payload: String) {
+    fun sendConfirmed(recipientPeerIdHex: String, payload: String) =
+        sendUnicast(BlePacketType.CONFIRMED, recipientPeerIdHex, payload, cacheIfOffline = true)
+
+    /**
+     * @param cacheIfOffline CONFIRMED만 true — CALL/CANCEL은 store-forward 대상이 아니다(그
+     * 순간 도달 못하면 흘려보냄, CLAUDE.md의 "알려진 한계" 참고). hexToByteArray()는 짝수 길이만
+     * 보장할 뿐 정확한 바이트 수는 보장하지 않으므로, 그 뒤 크기도 검증한다 — 안 그러면 아래
+     * BlePacket 생성자의 require()가 던지는 예외를 "조용한 no-op"을 기대하는 호출부가 그대로 맞는다.
+     */
+    private fun sendUnicast(type: BlePacketType, recipientPeerIdHex: String, payload: String, cacheIfOffline: Boolean) {
         if (!started) return
         val recipient = recipientPeerIdHex.hexToByteArray() ?: return
-        // hexToByteArray()는 짝수 길이만 보장할 뿐 정확한 바이트 수는 보장하지 않는다 —
-        // 여기서 걸러내지 않으면 아래 BlePacket 생성자의 require()가 던지는 예외를
-        // 그대로 맞고 죽는다(호출부는 "조용한 no-op"을 기대하고 있음).
         if (recipient.size != BleMeshConstants.PEER_ID_SIZE) return
         val packet = BlePacket(
-            type = BlePacketType.CONFIRMED,
+            type = type,
             ttl = BleMeshConstants.DEFAULT_TTL,
             senderPeerId = myPeerId,
             recipientPeerId = recipient,
             messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
             payload = payload.toByteArray(Charsets.UTF_8)
         )
-        if (peerManager?.isOnline(recipientPeerIdHex) == true) {
-            mainScope.launch { sendPacket(packet, excludeAddress = null) }
-        } else {
+        if (cacheIfOffline && peerManager?.isOnline(recipientPeerIdHex) != true) {
             storeForward.offer(packet)
+        } else {
+            mainScope.launch { sendPacket(packet, excludeAddress = null) }
         }
-    }
-
-    private suspend fun broadcast(type: BlePacketType, payload: String) {
-        if (!started) return
-        val packet = BlePacket(
-            type = type,
-            ttl = BleMeshConstants.DEFAULT_TTL,
-            senderPeerId = myPeerId,
-            recipientPeerId = BleMeshConstants.BROADCAST_RECIPIENT,
-            messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
-            payload = payload.toByteArray(Charsets.UTF_8)
-        )
-        sendPacket(packet, excludeAddress = null)
     }
 
     /**

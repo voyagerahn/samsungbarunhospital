@@ -94,10 +94,22 @@ Java 쪽 신규/변경 파일: `model/CallItem.java`(senderPeerId 필드 추가)
 - `app/src/test/java/.../data/CallQueueTest.java`, `network/IncomingCallHandlerTest.java` — Robolectric 필요(CallQueue가 `Handler(Looper.getMainLooper())` 사용), TCP+BLE 동시 도착 dedup 시나리오 포함. 12개.
 - 실행: `./gradlew :app:testDebugUnitTest`
 
+### CALL/CANCEL도 유니캐스트로 전환 — 처음 설계는 틀렸음 (2026-07-16)
+초기 구현은 `broadcastCall`/`broadcastCancel`로 `recipientPeerId = BROADCAST_RECIPIENT`를 써서 **모든 근처 기기**(다른 환자 태블릿 포함)가 `addressedToMe=true`로 판정해 자기 화면에 호출 알림을 띄우는 문제가 있었음. flood는 "메시지가 물리적으로 더 멀리 갈 수 있게" 중계하는 역할만 해야 하고, "누구 화면에 띄울지"는 별개 문제인데 이 둘을 구분 안 했던 게 원인. bitchat의 `PacketRelayManager.isPacketAddressedToMe`(recipientID가 특정 peerID와 일치할 때만 true, 그 외엔 중계만 하고 표시 안 함)를 참고해 수정:
+
+- `network/ConfigSync.java`: 응답 JSON에 `blePeerId` 필드 추가(`AppSettings.getOrCreateBlePeerId()`) — 간호사 설정을 TCP로 한 번이라도 받아온 적 있으면 그 기기의 BLE peerId를 같이 학습.
+- `data/AppSettings.java`: `KEY_NURSE_BLE_PEER_IDS`(IP→peerId 매핑 JSON) 신설. `getNursePeerId()`/`saveNursePeerId()`.
+- `ui/AdminSettingsActivity.java`: IP 추가 시(`learnNurseBlePeerId`) + "설정 불러오기" 시 모두 peerId 학습 시도(백그라운드, 실패해도 조용히 무시).
+- `network/ble/BleMeshManager.kt`: `broadcastCall`/`broadcastCancel` 삭제, `sendCallToPeer`/`sendCancelToPeer`(둘 다 `sendConfirmed`와 같은 `sendUnicast` 헬퍼 공유) 신설 — 셋 다 특정 peerId로만 유니캐스트.
+- `ui/MainActivity.java`: `sendBleToKnownNursePeers()` — 등록된 간호사 IP 중 peerId를 학습해둔 것에게만 개별 유니캐스트. **peerId를 모르는 간호사는 BLE 폴백 대상에서 그냥 빠짐**(모르는 상대에게 broadcast로 흘리는 것보다 안전한 선택).
+
+**중요한 남은 한계**: 이 방식은 **한 번이라도 TCP로 그 간호사와 통신에 성공한 적이 있어야** BLE peerId를 학습할 수 있음. 처음부터 한 번도 같은 네트워크였던 적이 없는 간호사-환자 쌍은 BLE로도 서로를 못 찾음(peerId를 모르니 유니캐스트 대상 자체가 안 생김). 병원 배치상 IP 등록은 보통 같은 네트워크에서 최초 설정하므로 실무 영향은 낮다고 판단했지만, 실기기 검증 시 반드시 확인 필요.
+
 ### 다음에 이어서 할 일
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.
 - 위 "알려진 한계" 2번(연결 캡 8개)·3번(하드웨어 advertise 미지원) — 실기기에서 문제로 확인되면 우선 대응 필요.
 - "간호사 설정 불러오기" 기능도 실기기(또는 에뮬레이터 2대)로 실제 요청→응답→적용 흐름 검증 필요 — 지금까지는 유닛테스트(`ConfigSyncTest`)와 빌드 성공만 확인됨.
+- BLE CALL 유니캐스트 타겟팅 실기기 검증: 환자 태블릿 3대(간호사 역할 1대 + 관계없는 환자 역할 2대)로, 관계없는 환자 태블릿들이 중계는 하되 자기 화면에는 절대 호출을 안 띄우는지 확인 필요.
 
 ### 개발 환경 참고
 adb 경로가 PATH에 없음 — `$HOME/Library/Android/sdk/platform-tools/adb`로 직접 호출. 에뮬레이터 실행 중이면 `adb devices -l`로 확인 후 `adb install -r app/build/outputs/apk/debug/app-debug.apk`, `adb shell monkey -p io.voyager.samsungbarunhospital -c android.intent.category.LAUNCHER 1`(실행), `adb exec-out screencap -p > 파일.png`(스크린샷)로 실제 동작을 직접 확인할 수 있었음.
