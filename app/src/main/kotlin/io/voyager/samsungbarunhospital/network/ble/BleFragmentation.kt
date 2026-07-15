@@ -99,8 +99,15 @@ object BleFragmentation {
             val envelope = parseEnvelope(fragmentPacket.payload) ?: return null
             val key = fragmentPacket.senderPeerId.toHex() + ":" + envelope.fragmentId.toHex()
 
-            val partial = partials.getOrPut(key) { PartialMessage(envelope.fragCount, clock()) }
-            if (partial.fragCount != envelope.fragCount) return null
+            // fragmentId(4바이트, 랜덤)는 같은 발신자가 짧은 시간에 보낸 서로 다른 메시지끼리
+            // 우연히 충돌할 수 있다. fragCount가 기존 partial과 다르면 그건 다른 메시지라는
+            // 뜻이므로, 새 조각을 버리는 대신 기존 partial을 교체해서 새로 시작한다 — 안 그러면
+            // 새 메시지의 모든 조각이 기존 partial의 타임아웃(30초)까지 계속 드롭된다.
+            var partial = partials[key]
+            if (partial == null || partial.fragCount != envelope.fragCount) {
+                partial = PartialMessage(envelope.fragCount, clock())
+                partials[key] = partial
+            }
 
             if (partial.chunks[envelope.fragIndex] == null) {
                 partial.chunks[envelope.fragIndex] = envelope.chunk

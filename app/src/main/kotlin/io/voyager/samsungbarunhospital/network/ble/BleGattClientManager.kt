@@ -49,6 +49,11 @@ class BleGattClientManager(
     @Volatile private var isScanning = false
     private var scanRetryCount = 0
 
+    // connectGatt()를 호출했지만 아직 connectionManager에 등록되지 않은(MTU 협상 중인) 주소.
+    // 이게 없으면 같은 기기의 반복되는 스캔 결과가 그 창(window) 동안 connectToDevice()를
+    // 중복 호출해서 BluetoothGatt 핸들이 leak되고 결국 GATT 슬롯이 고갈된다.
+    private val pendingConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     @Suppress("MissingPermission")
     fun start(): Boolean {
         if (isActive) return true
@@ -69,6 +74,7 @@ class BleGattClientManager(
     fun stop() {
         isActive = false
         stopScanning()
+        pendingConnections.clear()
         connectionManager.all().filter { it.isClient }.forEach {
             try { it.gatt?.disconnect() } catch (_: Exception) {}
         }
@@ -132,6 +138,7 @@ class BleGattClientManager(
     private fun handleScanResult(result: ScanResult) {
         val device = result.device
         if (connectionManager.isDeviceConnected(device.address)) return
+        if (pendingConnections.contains(device.address)) return
         if (connectionManager.isFull()) return
         connectToDevice(device)
     }
@@ -150,6 +157,7 @@ class BleGattClientManager(
                         }
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    pendingConnections.remove(device.address)
                     connectionManager.remove(device.address)
                     delegate.onDeviceDisconnected(device.address)
                     scope.launch {
@@ -161,6 +169,7 @@ class BleGattClientManager(
 
             override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
+                    pendingConnections.remove(device.address)
                     connectionManager.add(BleConnection(device.address, device, isClient = true, gatt = gatt))
                     try {
                         gatt.discoverServices()
@@ -212,11 +221,20 @@ class BleGattClientManager(
                     delegate.onRawPacketReceived(characteristic.value, device.address)
                 }
             }
+
+            override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+                // Signals "this link's outstanding write is done" regardless of status — a
+                // failed write shouldn't leave BleConnectionManager waiting forever, the caller
+                // just won't get delivery confirmation for this particular fragment.
+                connectionManager.onWriteAcked(device.address)
+            }
         }
 
+        pendingConnections.add(device.address)
         try {
             device.connectGatt(context, false, gattCallback)
         } catch (e: Exception) {
+            pendingConnections.remove(device.address)
             Log.e(TAG, "Exception connecting to ${device.address}: ${e.message}")
         }
     }

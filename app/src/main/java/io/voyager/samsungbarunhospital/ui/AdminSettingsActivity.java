@@ -251,11 +251,21 @@ public class AdminSettingsActivity extends AppCompatActivity {
             etMessages[i].setText(i < remote.messages.size() ? remote.messages.get(i) : "");
         }
 
-        // 버튼: 버튼 추가/수정/삭제가 원래 즉시 저장되는 것과 동일하게 바로 반영.
-        AppSettings.saveButtonConfigs(this, remote.buttons);
+        // 버튼: "+ 버튼 추가"와 동일하게 MAX_BUTTONS를 넘지 않도록 자르고, 즉시 저장.
+        List<ButtonConfig> buttons = remote.buttons;
+        boolean truncated = buttons.size() > AppSettings.MAX_BUTTONS;
+        if (truncated) {
+            buttons = buttons.subList(0, AppSettings.MAX_BUTTONS);
+        }
+        AppSettings.saveButtonConfigs(this, buttons);
         populateButtonList();
 
-        Toast.makeText(this, "버튼 설정은 바로 적용되었습니다. 메시지는 하단 저장 버튼을 눌러야 반영됩니다.", Toast.LENGTH_LONG).show();
+        String msg = "버튼 설정은 바로 적용되었습니다. 메시지는 하단 저장 버튼을 눌러야 반영됩니다.";
+        if (truncated) {
+            msg += "\n(간호사 태블릿에 버튼이 " + AppSettings.MAX_BUTTONS + "개보다 많아 앞의 "
+                    + AppSettings.MAX_BUTTONS + "개만 적용됨)";
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
     }
 
     private void populateNurseIpList() {

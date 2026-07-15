@@ -158,6 +158,13 @@ class BleGattServerManager(
                     }
                 }
             }
+
+            override fun onNotificationSent(device: BluetoothDevice, status: Int) {
+                // Same reasoning as the client side's onCharacteristicWrite — signals the
+                // outstanding notify on this link is done so BleConnectionManager.broadcast()
+                // can send the next fragment.
+                connectionManager.onWriteAcked(device.address)
+            }
         }
 
         try {

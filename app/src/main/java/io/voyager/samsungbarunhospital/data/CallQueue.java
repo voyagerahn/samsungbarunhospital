@@ -48,8 +48,13 @@ public class CallQueue {
      * - 같은 id가 이미 큐에 있으면 추가하지 않음 (TCP와 BLE로 같은 호출이 동시에 도착하는 경우 대비)
      *
      * @return true면 신규 추가됨(알림 필요), false면 이미 같은 id가 있어 무시됨
+     *
+     * synchronized인 이유: "중복 id 검사 → add"가 한 묶음으로 원자적이어야 함.
+     * CopyOnWriteArrayList는 개별 연산만 스레드안전할 뿐 이 복합 연산은 보장하지 않아서,
+     * TCP 스레드와 BLE 콜백 스레드가 같은 callId로 거의 동시에 호출하면 중복 검사를
+     * 둘 다 통과해버릴 수 있다(락 없이는).
      */
-    public boolean add(CallItem newItem) {
+    public synchronized boolean add(CallItem newItem) {
         long now = System.currentTimeMillis();
         // 만료 항목 먼저 정리
         purgeExpired(now);

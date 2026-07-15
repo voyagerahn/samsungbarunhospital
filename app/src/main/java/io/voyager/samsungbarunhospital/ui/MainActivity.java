@@ -360,13 +360,9 @@ public class MainActivity extends AppCompatActivity {
         String payload = tabletName + "|" + message + "|" + callId;
         Toast.makeText(this, "호출 전송 중...", Toast.LENGTH_SHORT).show();
 
-        // BLE는 flood 방식이라 개별 ACK가 없음 — UI 성공 판정은 기존처럼 TCP 결과 기준으로 유지
-        if (bleAvailable) {
-            BleMeshManager.broadcastCall(payload);
-        }
-
         if (targets.isEmpty()) {
-            // TCP 대상은 없지만 BLE는 사용 가능 — 전달 확인은 불가하므로 낙관적으로 배너에 추가
+            // 등록된 간호사 IP 자체가 없음 — 같은 네트워크로 닿을 방법이 없으니 BLE로만 시도
+            if (bleAvailable) BleMeshManager.broadcastCall(payload);
             activeCallIds.add(callId);
             activeCallMsgs.add(message);
             refreshCallBanner();
@@ -381,8 +377,15 @@ public class MainActivity extends AppCompatActivity {
             TcpSender.send(ip, payload, ok -> {
                 if (ok) success.incrementAndGet();
                 if (done.incrementAndGet() == total) {
+                    // BLE는 "같은 네트워크가 아닐 때"의 보조 경로이므로, TCP가 하나라도
+                    // 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 안 쏨(불필요한 중복
+                    // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
+                    // 실패했을 때만 BLE로 폴백.
+                    if (success.get() == 0 && bleAvailable) {
+                        BleMeshManager.broadcastCall(payload);
+                    }
                     runOnUiThread(() -> {
-                        if (success.get() > 0) {
+                        if (success.get() > 0 || bleAvailable) {
                             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
                             activeCallIds.add(callId);
                             activeCallMsgs.add(message);
@@ -460,12 +463,26 @@ public class MainActivity extends AppCompatActivity {
 
     private void cancelCall(String callId, String message) {
         String cancelPayload = "CANCEL|" + callId;
-        for (String ip : AppSettings.getNurseIps(this)) {
-            TcpSender.send(ip, cancelPayload, null);
+        List<String> targets = AppSettings.getNurseIps(this);
+        boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
+
+        if (targets.isEmpty()) {
+            if (bleAvailable) BleMeshManager.broadcastCancel(cancelPayload);
+        } else {
+            AtomicInteger done    = new AtomicInteger(0);
+            AtomicInteger success = new AtomicInteger(0);
+            int total = targets.size();
+            for (String ip : targets) {
+                TcpSender.send(ip, cancelPayload, ok -> {
+                    if (ok) success.incrementAndGet();
+                    // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
+                    if (done.incrementAndGet() == total && success.get() == 0 && bleAvailable) {
+                        BleMeshManager.broadcastCancel(cancelPayload);
+                    }
+                });
+            }
         }
-        if (BleMeshManager.isSupported(getApplicationContext())) {
-            BleMeshManager.broadcastCancel(cancelPayload);
-        }
+
         int idx = activeCallIds.indexOf(callId);
         if (idx >= 0) {
             activeCallIds.remove(idx);

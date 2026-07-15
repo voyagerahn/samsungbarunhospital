@@ -79,7 +79,13 @@ object BleMeshManager {
         val appContext = context.applicationContext
 
         val transportDelegate = object : BleTransportDelegate {
-            override fun onRawPacketReceived(bytes: ByteArray, fromAddress: String) = handleRawBytes(bytes, fromAddress)
+            override fun onRawPacketReceived(bytes: ByteArray, fromAddress: String) {
+                // GATT 콜백 스레드(Binder)에서 곧장 호출되므로, dedup/relay(추가 GATT
+                // write)/재조립/CallQueue 갱신 같은 무거운 처리를 여기서 동기 실행하면 그
+                // 스레드를 오래 점유해 다른 GATT 콜백이 지연될 수 있다. 코루틴으로 넘겨서
+                // 콜백 스레드는 즉시 반환하게 한다.
+                mainScope.launch { handleRawBytes(bytes, fromAddress) }
+            }
             override fun onDeviceConnected(address: String) {}
             override fun onDeviceDisconnected(address: String) {}
         }
@@ -121,17 +127,30 @@ object BleMeshManager {
         lastActivityAtMs = 0L
     }
 
-    @JvmStatic
-    fun broadcastCall(payload: String) = broadcast(BlePacketType.CALL, payload)
+    // Java(@JvmStatic) 호출부는 suspend 함수를 직접 부를 수 없으므로, 여기서 mainScope에
+    // launch만 하고 즉시 반환한다 — 실제 GATT write와 그 완료 대기는 코루틴 안에서 일어난다.
 
     @JvmStatic
-    fun broadcastCancel(payload: String) = broadcast(BlePacketType.CANCEL, payload)
+    fun broadcastCall(payload: String) {
+        if (!started) return
+        mainScope.launch { broadcast(BlePacketType.CALL, payload) }
+    }
+
+    @JvmStatic
+    fun broadcastCancel(payload: String) {
+        if (!started) return
+        mainScope.launch { broadcast(BlePacketType.CANCEL, payload) }
+    }
 
     /** Sends a unicast CONFIRMED reply, or caches it via [BleStoreForwardCache] if the recipient is currently offline. */
     @JvmStatic
     fun sendConfirmed(recipientPeerIdHex: String, payload: String) {
         if (!started) return
         val recipient = recipientPeerIdHex.hexToByteArray() ?: return
+        // hexToByteArray()는 짝수 길이만 보장할 뿐 정확한 바이트 수는 보장하지 않는다 —
+        // 여기서 걸러내지 않으면 아래 BlePacket 생성자의 require()가 던지는 예외를
+        // 그대로 맞고 죽는다(호출부는 "조용한 no-op"을 기대하고 있음).
+        if (recipient.size != BleMeshConstants.PEER_ID_SIZE) return
         val packet = BlePacket(
             type = BlePacketType.CONFIRMED,
             ttl = BleMeshConstants.DEFAULT_TTL,
@@ -141,13 +160,13 @@ object BleMeshManager {
             payload = payload.toByteArray(Charsets.UTF_8)
         )
         if (peerManager?.isOnline(recipientPeerIdHex) == true) {
-            sendPacket(packet, excludeAddress = null)
+            mainScope.launch { sendPacket(packet, excludeAddress = null) }
         } else {
             storeForward.offer(packet)
         }
     }
 
-    private fun broadcast(type: BlePacketType, payload: String) {
+    private suspend fun broadcast(type: BlePacketType, payload: String) {
         if (!started) return
         val packet = BlePacket(
             type = type,
@@ -160,7 +179,12 @@ object BleMeshManager {
         sendPacket(packet, excludeAddress = null)
     }
 
-    private fun sendPacket(packet: BlePacket, excludeAddress: String?) {
+    /**
+     * Fragments are sent one at a time, each awaiting the previous fragment's GATT write/notify
+     * ack (see [BleConnectionManager.broadcast]) — Android only allows one outstanding write per
+     * link, so firing them all at once risks silent loss on some OEM stacks.
+     */
+    private suspend fun sendPacket(packet: BlePacket, excludeAddress: String?) {
         for (fragment in BleFragmentation.fragment(packet)) {
             connectionManager.broadcast(
                 fragment.encode(),
@@ -176,7 +200,7 @@ object BleMeshManager {
      * message) *before* reassembly, so every hop keeps flooding fragments onward even before it
      * personally has enough pieces to reassemble the whole message.
      */
-    private fun handleRawBytes(bytes: ByteArray, fromAddress: String) {
+    private suspend fun handleRawBytes(bytes: ByteArray, fromAddress: String) {
         val packet = BlePacket.decode(bytes) ?: return
         if (packet.senderPeerId.contentEquals(myPeerId)) return // our own broadcast, echoed back by a relay
         if (dedupCache.isDuplicate(packet.messageId.toHex())) return
@@ -209,8 +233,12 @@ object BleMeshManager {
     }
 
     private fun onPeerCameOnline(peerIdHex: String) {
-        for (packet in storeForward.flushFor(peerIdHex)) {
-            sendPacket(packet, excludeAddress = null)
+        // BlePeerManager.markSeen()이 이 콜백을 동기 호출하므로, 여기서 직접 suspend
+        // sendPacket을 부르는 대신 코루틴으로 넘긴다.
+        mainScope.launch {
+            for (packet in storeForward.flushFor(peerIdHex)) {
+                sendPacket(packet, excludeAddress = null)
+            }
         }
     }
 

@@ -5,6 +5,10 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattServer
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -16,9 +20,9 @@ data class BleConnection(
     val address: String,
     val device: BluetoothDevice,
     val isClient: Boolean,
-    var gatt: BluetoothGatt? = null,
-    var writeCharacteristic: BluetoothGattCharacteristic? = null,
-    var subscribed: Boolean = false,
+    @Volatile var gatt: BluetoothGatt? = null,
+    @Volatile var writeCharacteristic: BluetoothGattCharacteristic? = null,
+    @Volatile var subscribed: Boolean = false,
     val connectedAt: Long = System.currentTimeMillis()
 )
 
@@ -32,15 +36,36 @@ data class BleConnection(
 class BleConnectionManager {
     companion object {
         private const val TAG = "BleConnectionManager"
+
+        // Android BLE only allows one outstanding write per GATT link. If the next fragment is
+        // written before onCharacteristicWrite/onNotificationSent fires for the previous one,
+        // the stack can silently drop it (GATT_WRITE_REQUEST_BUSY) or the peer never sees it.
+        // This bounds how long we wait for that ack before giving up on this connection for the
+        // current send — a dead/unresponsive link shouldn't stall the whole broadcast.
+        private const val WRITE_ACK_TIMEOUT_MS = 2000L
     }
 
     private val connections = ConcurrentHashMap<String, BleConnection>() // key = device address
+
+    // One pending-write completion per address at a time (Android BLE serializes writes per
+    // link anyway, so a single slot per address is correct — a second write is never issued
+    // for the same address until the first one's ack arrives or times out, see broadcast()).
+    private val pendingWriteAcks = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+
+    /** Called from BleGattClientManager's onCharacteristicWrite / BleGattServerManager's onNotificationSent. */
+    fun onWriteAcked(address: String) {
+        pendingWriteAcks.remove(address)?.complete(Unit)
+    }
 
     fun add(conn: BleConnection) {
         connections[conn.address] = conn
     }
 
-    fun remove(address: String): BleConnection? = connections.remove(address)
+    fun remove(address: String): BleConnection? {
+        // Connection is gone — any write we were waiting to have acked on it never will be.
+        pendingWriteAcks.remove(address)?.complete(Unit)
+        return connections.remove(address)
+    }
 
     fun get(address: String): BleConnection? = connections[address]
 
@@ -52,24 +77,49 @@ class BleConnectionManager {
 
     fun isDeviceConnected(address: String): Boolean = connections.containsKey(address)
 
-    fun clear() = connections.clear()
+    fun clear() {
+        pendingWriteAcks.values.forEach { it.complete(Unit) }
+        pendingWriteAcks.clear()
+        connections.clear()
+    }
 
-    /** Sends [bytes] to every connection except [excludeAddress] (the one the packet arrived on, if any). */
-    fun broadcast(bytes: ByteArray, gattServer: BluetoothGattServer?, serverCharacteristic: BluetoothGattCharacteristic?, excludeAddress: String? = null) {
-        for (conn in connections.values) {
-            if (conn.address == excludeAddress) continue
-            try {
-                if (conn.isClient) {
-                    val gatt = conn.gatt ?: continue
-                    val characteristic = conn.writeCharacteristic ?: continue
-                    writeToCharacteristic(gatt, characteristic, bytes)
-                } else if (conn.subscribed && gattServer != null && serverCharacteristic != null) {
-                    notifyDevice(gattServer, conn.device, serverCharacteristic, bytes)
+    /**
+     * Sends [bytes] to every connection except [excludeAddress] (the one the packet arrived on,
+     * if any). Waits for each link's previous write to be acked before issuing this one — see
+     * [WRITE_ACK_TIMEOUT_MS] — but different connections are written to concurrently, so one
+     * slow/dead peer doesn't delay delivery to the others.
+     */
+    suspend fun broadcast(bytes: ByteArray, gattServer: BluetoothGattServer?, serverCharacteristic: BluetoothGattCharacteristic?, excludeAddress: String? = null) {
+        coroutineScope {
+            for (conn in connections.values) {
+                if (conn.address == excludeAddress) continue
+                launch {
+                    try {
+                        if (conn.isClient) {
+                            val gatt = conn.gatt ?: return@launch
+                            val characteristic = conn.writeCharacteristic ?: return@launch
+                            writeAndAwaitAck(conn.address) { writeToCharacteristic(gatt, characteristic, bytes) }
+                        } else if (conn.subscribed && gattServer != null && serverCharacteristic != null) {
+                            writeAndAwaitAck(conn.address) { notifyDevice(gattServer, conn.device, serverCharacteristic, bytes) }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to send to ${conn.address}: ${e.message}")
+                    }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to send to ${conn.address}: ${e.message}")
             }
         }
+    }
+
+    private suspend fun writeAndAwaitAck(address: String, issueWrite: () -> Unit) {
+        // A write already in flight for this address (shouldn't normally happen since callers
+        // serialize per-connection via this same mechanism) — wait for it first so we never have
+        // two outstanding writes on one link.
+        pendingWriteAcks[address]?.let { withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { it.await() } }
+        val deferred = CompletableDeferred<Unit>()
+        pendingWriteAcks[address] = deferred
+        issueWrite()
+        withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { deferred.await() }
+        pendingWriteAcks.remove(address)
     }
 
     /** Sends [bytes] to a single connection identified by device address, if currently connected. */
