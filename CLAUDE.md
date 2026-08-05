@@ -44,8 +44,8 @@
 
 ### 상태 (2026-07-13 기준)
 - 구현 완료(Stage 0~4), 단위테스트 43개 전부 통과, `./gradlew assembleDebug` 정상.
-- **실기기 검증(Stage 5) 미완료** — 이 개발 환경에는 adb/에뮬레이터가 없어 BLE 광고·스캔·GATT 연결을 직접 확인할 수 없었음. 사용자가 API26+ 실기기 2~3대로 직접 검증해야 함.
-- `main`에 아직 병합되지 않음.
+- **실기기 검증(Stage 5) 미완료** — 이 개발 환경에는 adb/에뮬레이터가 없어 BLE 광고·스캔·GATT 연결을 직접 확인할 수 없었음. 사용자가 API26+ 실기기 2~3대로 직접 검증해야 함. **주의: 이 검증 없이 2026-08-05에 main 병합 진행됨(아래 참고)** — BLE mesh 관련 버그가 실사용 중 발견될 수 있으니 관련 이슈 제보 시 이 부분부터 의심할 것.
+- 2026-08-05, 사용자 승인으로 `main`에 병합 및 원격 push 완료(fast-forward, 커밋 `3d8060d`까지). 실기기 검증은 여전히 미완료 상태로 병합된 것이니 유의.
 - 상세 설계 계획 원본: `~/.claude/plans/crispy-waddling-lynx.md` (사용자 로컬 경로, 이 저장소 밖에 있음).
 
 ### 패키지 구조 (`network/ble/`, main 아래 Kotlin)
@@ -158,4 +158,4 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
 
 ### 개발 환경 참고
 adb 경로가 PATH에 없음 — `$HOME/Library/Android/sdk/platform-tools/adb`로 직접 호출. 에뮬레이터 실행 중이면 `adb devices -l`로 확인 후 `adb install -r app/build/outputs/apk/debug/app-debug.apk`, `adb shell monkey -p io.voyager.samsungbarunhospital -c android.intent.category.LAUNCHER 1`(실행), `adb exec-out screencap -p > 파일.png`(스크린샷)로 실제 동작을 직접 확인할 수 있었음.
-- `feature/ble-mesh` → `main` 병합은 실기기 검증 이후, 사용자 승인 후 진행.
+- ~~`feature/ble-mesh` → `main` 병합은 실기기 검증 이후, 사용자 승인 후 진행.~~ → 2026-08-05 사용자 승인으로 실기기 검증 전에 이미 병합·push됨. Stage 5 실기기 검증은 여전히 필요(위 "상태" 참고), 지금은 사후 검증 형태로 진행해야 함.
