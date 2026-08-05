@@ -1,248 +1,126 @@
 ---
 pdf_options:
   format: A4
-  margin: 30mm 25mm 30mm 25mm
+  margin: 28mm 24mm 28mm 24mm
   printBackground: true
 stylesheet: |
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
 
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
     font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
     font-size: 13px;
-    line-height: 1.8;
-    color: #2c3e50;
+    line-height: 1.85;
+    color: #37352f;
     background: #fff;
   }
 
-  /* 표지 헤더 */
-  .cover {
-    text-align: center;
-    padding: 20px 0 36px 0;
-    border-bottom: 4px solid #1565C0;
-    margin-bottom: 36px;
-  }
+  .cover { text-align: center; padding: 24px 0 40px 0; border-bottom: 4px solid #1565C0; margin-bottom: 36px; }
+  .cover .badge { display: inline-block; background: #1565C0; color: #fff; font-size: 11px; font-weight: 700; padding: 4px 14px; border-radius: 20px; letter-spacing: 1px; margin-bottom: 14px; }
+  .cover h1 { font-size: 27px; font-weight: 900; color: #1565C0; margin-bottom: 8px; }
+  .cover .subtitle { font-size: 13px; color: #666; }
 
-  .cover .badge {
-    display: inline-block;
-    background: #1565C0;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 4px 14px;
-    border-radius: 20px;
-    letter-spacing: 1px;
-    margin-bottom: 14px;
-  }
+  h2 { font-size: 17px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #1565C0, #1E88E5); padding: 12px 18px; border-radius: 10px; margin: 34px 0 16px 0; box-shadow: 0 2px 6px rgba(21,101,192,0.25); }
+  h3 { font-size: 13.5px; font-weight: 700; color: #1565C0; border-left: 4px solid #90CAF9; padding-left: 10px; margin: 20px 0 10px 0; }
+  p { margin-bottom: 10px; color: #444; }
+  ul, ol { padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 6px; color: #444; }
 
-  .cover h1 {
-    font-size: 26px;
-    font-weight: 900;
-    color: #1565C0;
-    margin-bottom: 8px;
-  }
+  code { background: #E3F2FD; color: #1565C0; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
 
-  .cover .subtitle {
-    font-size: 13px;
-    color: #666;
-  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px 0; font-size: 12.5px; border-radius: 8px; overflow: hidden; }
+  thead tr { background: #1565C0; color: #fff; }
+  thead th { padding: 10px 14px; text-align: left; font-weight: 700; }
+  tbody tr:nth-child(even) { background: #F5F9FF; }
+  td { padding: 9px 14px; border-bottom: 1px solid #eee; color: #333; }
 
-  /* 섹션 제목 */
-  h2 {
-    font-size: 16px;
-    font-weight: 700;
-    color: #fff;
-    background: #1565C0;
-    padding: 10px 16px;
-    border-radius: 6px;
-    margin: 32px 0 16px 0;
-  }
+  blockquote { background: #FFF8E1; border-left: 5px solid #FFC107; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; color: #5D4037; font-size: 12.5px; }
+  blockquote p { margin: 0; color: #5D4037; }
+  blockquote strong { color: #E65100; }
 
-  h3 {
-    font-size: 13px;
-    font-weight: 700;
-    color: #1565C0;
-    border-left: 4px solid #1565C0;
-    padding-left: 10px;
-    margin: 20px 0 10px 0;
-  }
+  hr { border: none; border-top: 1px solid #eee; margin: 30px 0; }
+  strong { color: #1565C0; font-weight: 700; }
 
-  p {
-    margin-bottom: 10px;
-    color: #444;
-  }
-
-  /* 리스트 */
-  ul, ol {
-    padding-left: 20px;
-    margin-bottom: 12px;
-  }
-
-  li {
-    margin-bottom: 5px;
-    color: #444;
-  }
-
-  /* 인라인 코드 (IP, 비밀번호 등) */
-  code {
-    background: #E3F2FD;
-    color: #1565C0;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 4px;
-  }
-
-  /* 표 */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0 20px 0;
-    font-size: 12.5px;
-  }
-
-  thead tr {
-    background: #1565C0;
-    color: #fff;
-  }
-
-  thead th {
-    padding: 10px 14px;
-    text-align: left;
-    font-weight: 700;
-  }
-
-  tbody tr:nth-child(even) {
-    background: #F5F9FF;
-  }
-
-  tbody tr:hover {
-    background: #E3F2FD;
-  }
-
-  td {
-    padding: 9px 14px;
-    border-bottom: 1px solid #dde;
-    color: #333;
-  }
-
-  /* 경고/안내 박스 */
-  blockquote {
-    background: #FFF8E1;
-    border-left: 5px solid #FFC107;
-    padding: 12px 16px;
-    border-radius: 0 6px 6px 0;
-    margin: 14px 0;
-    color: #5D4037;
-    font-size: 12.5px;
-  }
-
-  blockquote p {
-    margin: 0;
-    color: #5D4037;
-  }
-
-  blockquote strong {
-    color: #E65100;
-  }
-
-  /* hr 구분선 */
-  hr {
-    border: none;
-    border-top: 1px solid #e0e0e0;
-    margin: 28px 0;
-  }
-
-  /* strong */
-  strong {
-    color: #1565C0;
-    font-weight: 700;
-  }
+  .callout { border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 12.5px; }
+  .callout-tip { background: #E8F5E9; border-left: 5px solid #43A047; color: #2E4B31; }
+  .callout-limit { background: #FCE4EC; border-left: 5px solid #E91E63; color: #6A1B3A; }
+  .new-badge { display: inline-block; background: #43A047; color: #fff; font-size: 10px; font-weight: 800; padding: 2px 9px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
 ---
 
 <div class="cover">
-  <div class="badge">사용 설명서 v1.0</div>
+  <div class="badge">🏥 사용 설명서 v2.1.2</div>
   <h1>삼성바른병원 환자 호출 시스템</h1>
-  <p class="subtitle">환자 태블릿 · 간호사 태블릿 설치 및 운영 가이드</p>
+  <p class="subtitle">📶 Wi-Fi + 블루투스 보조 통신 지원 · 환자 태블릿 · 간호사 태블릿 설치 및 운영 가이드</p>
 </div>
 
-## 시스템 개요
+## 📋 시스템 개요
 
-환자 태블릿에서 호출 버튼을 누르면 간호사 태블릿에 즉시 알림이 전달되는 시스템입니다.
-같은 WiFi 네트워크에 연결된 태블릿 간에 TCP 통신으로 동작하며, 인터넷 연결 없이 병원 내부 네트워크만으로 작동합니다.
+환자 태블릿에서 🔔 호출 버튼을 누르면 간호사 태블릿에 즉시 알림이 전달되는 시스템입니다.
 
----
+- **기존 방식**: 같은 Wi-Fi(무선 네트워크)에 연결된 태블릿끼리 즉시 호출 전달
+- **✨ v2.0 신규**: 같은 Wi-Fi가 아니어도, 두 태블릿이 **물리적으로 가까이** 있으면 📶 블루투스로 보조 전달
 
-## 설치 전 준비사항
-
-> **필수 조건**: 환자 태블릿과 간호사 태블릿이 **같은 WiFi(무선 네트워크)**에 연결되어 있어야 합니다.
-
-1. 모든 태블릿에 APK 파일 설치
-2. 앱 실행 후 **알림 권한 허용**
-3. 배터리 절약 모드에서 앱 **예외 처리** (백그라운드 실행 허용)
+> 💬 인터넷 연결이 필요 없습니다. 병원 내부 네트워크(그리고 필요할 때는 블루투스)만으로 작동합니다.
 
 ---
 
-## 간호사 태블릿 설정
+## 🚀 설치 전 준비사항
 
-### 1단계 — 관리자 설정 진입
+> **필수 조건**: 기본적으로는 환자 태블릿과 간호사 태블릿이 **같은 Wi-Fi**에 연결되어 있어야 합니다. (같은 Wi-Fi가 아닌 경우의 대안은 아래 📶 새 기능 부분을 참고하세요.)
 
+1. ✅ 모든 태블릿에 APK 파일 설치
+2. ✅ 앱 실행 후 **알림 권한 허용**
+3. ✅ **블루투스 권한 허용** (v2.0 신규 — 물어보면 허용해주세요, 거부해도 앱은 정상 작동하고 Wi-Fi 기능만 그대로 사용됩니다)
+4. ✅ 배터리 절약 모드에서 앱 **예외 처리** (백그라운드 실행 허용)
+
+---
+
+## 🩺 간호사 태블릿 설정
+
+### 1️⃣ 관리자 설정 진입
 - 화면 **왼쪽 빈 영역**을 빠르게 **4번 연속 탭**
 - 관리자 비밀번호 입력 (기본값: `0819`)
 - **앱 관리자 설정** 선택
 
-### 2단계 — 태블릿 이름 설정
-
+### 2️⃣ 태블릿 이름 설정
 - 태블릿 이름란에 `간호사 스테이션` 등 고유한 이름 입력
-- 이 이름이 환자 호출 알림에 발신자로 표시됩니다
+- 이 이름이 환자 호출 알림에 발신자로 표시되고, 📶 블루투스 검색 목록에도 이 이름으로 보입니다
 
-### 3단계 — IP 주소 확인
-
-- 설정 화면 상단 **"이 기기의 IP 주소"** 확인
+### 3️⃣ IP 주소 확인
+- 설정 화면의 **"이 기기의 IP 주소"** 확인
 - 예: `192.168.1.105` → 이 번호를 메모해두세요 (환자 태블릿 설정에 필요)
 
-### 4단계 — 저장
-
+### 4️⃣ 저장
 - 하단 **저장** 버튼 클릭
 
-> **주의**: 간호사 태블릿은 **앱이 항상 실행 중**이어야 호출을 받을 수 있습니다. 앱을 완전히 종료하지 마세요.
+> ⚠️ **주의**: 간호사 태블릿은 **앱이 항상 실행 중**이어야 호출을 받을 수 있습니다. 앱을 완전히 종료하지 마세요.
 
 ---
 
-## 환자 태블릿 설정
+## 🛌 환자 태블릿 설정
 
-### 1단계 — 관리자 설정 진입
+### 1️⃣ 관리자 설정 진입
+- 화면 **왼쪽 빈 영역**을 빠르게 **4번 연속 탭** → 관리자 비밀번호 입력
 
-- 화면 **왼쪽 빈 영역**을 빠르게 **4번 연속 탭**
-- 관리자 비밀번호 입력
-
-### 2단계 — 태블릿 이름 설정
-
+### 2️⃣ 태블릿 이름 설정
 - `1호실 1번`, `2호실 3번` 등 병실/병상을 구분하는 이름 입력
-- 간호사 알림 화면에 이 이름이 표시됩니다
 
-### 3단계 — 간호사 태블릿 IP 등록
-
-- **간호사 태블릿 IP 목록** 섹션 → **IP 추가** 버튼 클릭
+### 3️⃣ 간호사 태블릿 IP 등록
+- **통신 설정** 탭 → **간호사 태블릿 IP 목록** 카드 → **+ IP 추가** 버튼
 - 간호사 태블릿에서 메모한 IP 입력 (예: `192.168.1.105`)
 - 간호사 태블릿이 여러 대인 경우 모두 추가
 
-### 4단계 — 호출 메시지 설정 (선택)
-
+### 4️⃣ 호출 메시지 설정 (선택)
 - 호출 시 선택할 메시지 목록 편집 가능
 - 예: `너무 아파요`, `주사약이 다 들어갔어요`, `화장실 도움이 필요해요`
+- 💡 간호사 태블릿에 이미 등록된 메시지를 그대로 가져오고 싶다면 아래 **"간호사 설정 불러오기"** 기능을 사용하세요
 
-### 5단계 — 저장
+### 5️⃣ 저장
 
 ---
 
-## 일상 사용 방법
+## 🖐️ 일상 사용 방법
 
 ### 환자 태블릿
 
@@ -256,45 +134,140 @@ stylesheet: |
 
 | 상황 | 동작 |
 |------|------|
-| 환자 호출 수신 | 화면에 알림 표시 |
+| 환자 호출 수신 | 화면에 알림 표시 (📶 블루투스로 온 것도 화면은 동일) |
 | 알림 탭 | 호출 목록 화면으로 이동 |
-| 처리 완료 | 해당 호출 항목 삭제 |
+| 처리 완료 (확인 버튼) | 해당 호출 항목 삭제, 환자 화면에 "완료" 표시 |
 
 ---
 
-## 유의사항
+## 📶 새 기능: 블루투스 보조 통신 <span class="new-badge">NEW v2.0</span>
+
+### 🤔 왜 필요한가요?
+
+가끔 환자 태블릿이 방문객 대기실 Wi-Fi나 다른 병동 네트워크에 연결되어 있어서, 간호사 스테이션과 **같은 네트워크가 아닌** 상황이 생길 수 있습니다. 이럴 때도 두 태블릿이 **물리적으로 가까이**(같은 병실, 같은 복도 정도) 있으면 블루투스를 통해 호출이 전달되도록 하는 보조 기능입니다.
+
+> 💬 평소에 같은 Wi-Fi를 쓰고 계셨다면, **아무것도 새로 설정할 필요가 없습니다.** 이 기능은 필요할 때 자동으로 뒤에서 작동합니다.
+
+### 🔄 대부분의 경우 — 자동으로 처리됩니다
+
+간호사 IP를 한 번이라도 정상적으로 등록했거나 "간호사 설정 불러오기"를 사용한 적이 있다면, 두 태블릿은 서로를 자동으로 기억해둡니다. 이후 같은 Wi-Fi가 아닌 상황이 생기면, 앱이 알아서 블루투스로 전달을 시도합니다.
+
+**관리자가 특별히 할 일은 없습니다** — 평소처럼 IP를 등록하고 쓰시면 됩니다.
+
+### 🔍 처음부터 같은 Wi-Fi였던 적이 한 번도 없는 경우 — 직접 등록이 필요합니다
+
+두 태블릿이 한 번도 같은 네트워크에 연결된 적이 없다면, 자동으로 서로를 기억할 방법이 없습니다. 이럴 땐 블루투스 스피커를 페어링하듯 **직접 검색해서 등록**하면 됩니다.
+
+1. 📍 두 태블릿을 **물리적으로 가까이**(1~2m 이내) 두세요
+2. 📶 두 태블릿 모두 **블루투스가 켜져 있는지** 확인하세요
+3. 환자 태블릿에서 **관리자 설정 → 통신 설정 탭 → "BLE 전용 간호사" 카드**로 이동
+4. **"근처 기기 검색"** 버튼 탭
+5. ⏳ 몇 초 기다리면 목록에 근처 태블릿 이름들이 나타납니다
+
+<div class="callout callout-limit">
+⚠️ <strong>목록에는 간호사 태블릿뿐 아니라 근처의 다른 환자 태블릿도 함께 나타날 수 있습니다.</strong> 이 화면은 "근처에서 감지된 모든 기기"를 보여주는 것이라, 반드시 이름을 확인하고 <strong>정확히 등록하려는 간호사 태블릿인지</strong> 확인한 뒤 진행하세요. 다른 환자 태블릿을 잘못 등록하면 이후 호출이 그쪽으로 전달되어 정작 간호사는 호출을 못 받게 됩니다.
+</div>
+
+6. 원하는 이름 옆 **"등록"** 버튼 탭 <span class="new-badge">NEW v2.1</span>
+7. 확인 창에 뜨는 이름을 한 번 더 확인하고 **"등록"** 탭 (실수로 다른 태블릿을 눌렀다면 여기서 **"취소"**)
+8. ✅ 완료! 이제 이 간호사 태블릿은 다른 네트워크에 있어도 블루투스로 호출을 받을 수 있습니다
+
+> 💡 목록에 아무것도 안 뜬다면, 두 태블릿을 좀 더 가까이 붙이고 몇 초만 더 기다려보세요.
+
+### ⚠️ 알아두면 좋은 점 (한계)
+
+<div class="callout callout-limit">
+🚫 <strong>Wi-Fi만큼 확실하지 않습니다.</strong> 블루투스 방식은 "확실히 받았다"는 신호가 없어서, 상황에 따라 전달이 늦어지거나 아주 드물게 전달이 안 될 수 있습니다. <strong>급한 상황에서는 가능하면 같은 Wi-Fi 연결을 우선 사용하는 것을 권장합니다.</strong>
+</div>
+
+- 📏 두 태블릿이 **물리적으로 가까이** 있어야 합니다 (벽이 여러 개 있거나 너무 멀면 안 될 수 있음)
+- 🔋 블루투스가 계속 켜져 있는 동안 배터리를 평소보다 조금 더 소모할 수 있습니다
+- 📱 아주 오래된 태블릿(구형 안드로이드)은 "내가 먼저 찾아서 연결"은 되지만 "다른 기기가 나를 찾아오는" 건 안 될 수 있습니다 → 병동에 비교적 최신 태블릿이 최소 1대는 있는 것이 좋습니다
+- 🚫 두 태블릿이 정말 한 번도 같은 네트워크였던 적이 없고, "근처 기기 검색"으로도 등록하지 않았다면 블루투스로도 호출이 불가능합니다
+
+---
+
+## ⚙️ 새 기능: 간호사 설정 불러오기 <span class="new-badge">NEW v2.0</span>
+
+### 🤔 무엇을 하는 기능인가요?
+
+간호사 태블릿에 등록된 **호출 메시지 목록**과 **앱 버튼 설정**을, 환자 태블릿이 직접 요청해서 그대로 복사해 올 수 있는 기능입니다. 간호사가 메시지를 바꿨는데 환자 태블릿마다 일일이 다시 입력하기 번거로울 때 유용합니다.
+
+### 📝 사용 방법
+
+1. 환자 태블릿에서 **관리자 설정 → 통신 설정 탭**으로 이동
+2. **"간호사 설정 불러오기"** 카드에서 버튼 탭
+3. 등록된 간호사 태블릿 목록에서 하나 선택
+4. 몇 개의 메시지·버튼을 불러왔는지 확인 창이 뜹니다 → **"적용"** 탭
+
+> ⚠️ **버튼은 바로 반영**되지만, **메시지는 화면 맨 아래 "저장" 버튼을 눌러야 최종 반영**됩니다. 헷갈리기 쉬운 부분이니 꼭 기억해주세요!
+
+> 💬 이 기능은 같은 Wi-Fi에 연결되어 있을 때만 사용할 수 있습니다.
+
+---
+
+## ⚠️ 유의사항
 
 | 항목 | 내용 |
 |------|------|
-| 네트워크 | 환자·간호사 태블릿 모두 같은 WiFi 연결 필수 |
+| 네트워크 | 가능하면 환자·간호사 태블릿 모두 같은 Wi-Fi 연결 권장 (📶 다르면 블루투스가 보조로 작동) |
 | 앱 실행 유지 | 간호사 태블릿은 앱이 항상 켜져 있어야 호출 수신 가능 |
-| IP 변경 | WiFi 재연결 시 IP가 바뀔 수 있음 → 환자 태블릿에서 IP 재확인 후 재등록 |
-| 태블릿 이름 | 각 태블릿마다 서로 다른 이름 설정 권장 |
+| IP 변경 | Wi-Fi 재연결 시 IP가 바뀔 수 있음 → 환자 태블릿에서 IP 재확인 후 재등록 |
+| 태블릿 이름 | 각 태블릿마다 서로 다른 이름 설정 권장 (블루투스 검색 목록에도 표시되므로 알아보기 쉬운 이름 권장) |
+| 블루투스 | 항상 켜두는 것을 권장 (다른 네트워크 상황을 대비) |
 | 비밀번호 | 관리자 비밀번호 분실 시 앱 재설치 필요 |
-| 배터리 | 간호사 태블릿은 항상 충전 상태 유지 권장 |
+| 배터리 | 모든 태블릿, 특히 간호사 태블릿은 항상 충전 상태 유지 권장 |
 
 ---
 
-## 문제 해결
+## 🛠️ 문제 해결
 
 ### "전달 실패" 메시지가 뜰 때
-
 1. 간호사 태블릿에서 앱이 실행 중인지 확인
-2. 두 태블릿이 같은 WiFi에 연결되어 있는지 확인
+2. 두 태블릿이 같은 Wi-Fi에 연결되어 있는지 확인
 3. 환자 태블릿 관리자 설정에서 간호사 IP가 올바르게 입력되어 있는지 확인
-4. WiFi 재연결 후 간호사 IP가 바뀌었을 수 있음 → 간호사 태블릿 IP 재확인 후 재등록
+4. Wi-Fi 재연결 후 간호사 IP가 바뀌었을 수 있음 → IP 재확인 후 재등록
+5. 📶 같은 Wi-Fi가 아니라면, 두 태블릿을 물리적으로 가까이 두고 블루투스가 켜져 있는지 확인
 
 ### 간호사 태블릿에 알림이 안 뜰 때
-
 1. 태블릿 알림 설정에서 앱 알림 허용 여부 확인
 2. 앱 완전 종료 후 다시 실행
 
+### 📶 "근처 기기 검색" 목록에 아무것도 안 뜰 때
+1. 두 태블릿 모두 블루투스가 켜져 있는지 확인
+2. 두 태블릿을 좀 더 가까이(1~2m 이내) 붙이고 몇 초 더 기다리기
+3. 설정 → 앱 권한에서 이 앱의 블루투스·위치 권한이 허용되어 있는지 확인
+4. 그래도 안 되면 두 태블릿 모두 앱을 껐다가 다시 실행 후 재시도
+
+### 📶 블루투스로 호출이 잘 안 갈 때
+1. 통신 설정 탭의 **"근거리 보조 통신(BLE) 상태"** 카드에서 현재 상태 확인 가능
+2. "연결된 기기: 0대"로 계속 뜬다면 상대 태블릿과 거리가 너무 멀거나, 사이에 장애물(벽 등)이 있거나, 상대 블루투스가 꺼져 있을 가능성이 높습니다
+3. 가능하다면 같은 Wi-Fi로 연결하는 것이 가장 확실합니다
+
 ---
 
-## 기본 관리자 정보
+## 🔑 기본 관리자 정보
 
 | 항목 | 값 |
 |------|-----|
 | 기본 비밀번호 | `0819` |
 | 비밀번호 변경 위치 | 관리자 설정 → 비밀번호 항목 |
 | 관리자 진입 방법 | 왼쪽 빈 영역 4번 연속 탭 |
+
+---
+
+## 📝 변경 요약
+
+### v2.1.2
+- 🔧 웨이브 버튼에 등록되어 있던 잘못된 앱 패키지명 수정 (실제로 존재하지 않는 패키지라 항상 스토어로 이동했음) — **기존에 이미 설정을 저장한 태블릿은 자동 반영 안 됨, 관리자 설정 → 앱 버튼 관리에서 웨이브 버튼을 열어 직접 한 번 재저장 필요**
+
+### v2.1.1
+- 🔧 안드로이드 11 이상 태블릿에서 유튜브·웨이브 등 앱 버튼이 실행되지 않고 스토어로만 이동하던 문제 수정
+
+### v2.1
+- 🛡️ "근처 기기 검색"에서 다른 환자 태블릿을 실수로 간호사로 등록하지 않도록 **경고 문구 + 등록 확인 창** 추가
+
+### v2.0
+- ✨ 같은 Wi-Fi가 아닐 때를 위한 **블루투스 보조 통신** 추가 (자동 + "근처 기기 검색" 수동 등록)
+- ✨ **간호사 설정 불러오기** 기능 추가 (메시지·버튼 설정을 다른 태블릿에서 그대로 가져오기)
+- 🎨 관리자 설정 화면을 탭 방식으로 개편(기본 정보 / 통신 설정 / 화면·알람 설정 / 호출 메시지 / 앱 버튼 관리)
