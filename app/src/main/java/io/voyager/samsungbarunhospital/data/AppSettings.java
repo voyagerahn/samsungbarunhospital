@@ -271,7 +271,7 @@ public class AppSettings {
         // Android 9 (API 28) 이상: Wavve 앱 실행 / 미만: Wavve 웹 연결
         boolean wavveApp = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P;
         String  wavveType   = wavveApp ? ButtonConfig.TYPE_APP : ButtonConfig.TYPE_WEB;
-        String  wavveTarget = wavveApp ? "com.movienet.touch.wavveon" : "https://www.wavve.com";
+        String  wavveTarget = wavveApp ? "kr.co.captv.pooqV2" : "https://www.wavve.com";
 
         List<ButtonConfig> list = new ArrayList<>();
         list.add(new ButtonConfig(null, "youtube",            ButtonConfig.TYPE_APP, "com.google.android.youtube"));
