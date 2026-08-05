@@ -38,11 +38,8 @@ import io.voyager.samsungbarunhospital.network.ble.BlePermissions;
 import android.os.Handler;
 import android.os.Looper;
 
-import android.net.wifi.WifiManager;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -214,16 +211,8 @@ public class MainActivity extends AppCompatActivity {
             iv.setElevation(dpToPx(20));
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
 
-            if (config.imagePath != null) {
-                Bitmap bm = BitmapFactory.decodeFile(config.imagePath);
-                if (bm != null) {
-                    iv.setImageBitmap(bm);
-                    loadedBitmaps.add(bm); // 추적 목록에 등록
-                } else {
-                    setButtonImage(iv, config.drawableRes);
-                }
-            } else {
-                setButtonImage(iv, config.drawableRes);
+            if (!ButtonImageLoader.tryLoadCustomImage(iv, config, loadedBitmaps::add)) {
+                ButtonImageLoader.setDrawableOrPlaceholder(iv, this, config.drawableRes);
             }
 
             final ButtonConfig finalConfig = config;
@@ -375,34 +364,25 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        AtomicInteger done    = new AtomicInteger(0);
-        AtomicInteger success = new AtomicInteger(0);
-        int total = targets.size();
-
-        for (String ip : targets) {
-            TcpSender.send(ip, payload, ok -> {
-                if (ok) success.incrementAndGet();
-                if (done.incrementAndGet() == total) {
-                    // BLE는 "같은 네트워크가 아닐 때"의 보조 경로이므로, TCP가 하나라도
-                    // 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 안 쏨(불필요한 중복
-                    // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
-                    // 실패했을 때만 BLE로 폴백.
-                    if (success.get() == 0 && bleAvailable) {
-                        sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
-                    }
-                    runOnUiThread(() -> {
-                        if (success.get() > 0 || bleAvailable) {
-                            Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
-                            activeCallIds.add(callId);
-                            activeCallMsgs.add(message);
-                            refreshCallBanner();
-                        } else {
-                            Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
-                        }
-                    });
+        TcpSender.sendToAll(targets, payload, anySuccess -> {
+            // BLE는 "같은 네트워크가 아닐 때"의 보조 경로이므로, TCP가 하나라도
+            // 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 안 쏨(불필요한 중복
+            // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
+            // 실패했을 때만 BLE로 폴백.
+            if (!anySuccess && bleAvailable) {
+                sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
+            }
+            runOnUiThread(() -> {
+                if (anySuccess || bleAvailable) {
+                    Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+                    activeCallIds.add(callId);
+                    activeCallMsgs.add(message);
+                    refreshCallBanner();
+                } else {
+                    Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
                 }
             });
-        }
+        });
     }
 
     private void refreshCallBanner() {
@@ -513,18 +493,12 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (!targets.isEmpty()) {
-            AtomicInteger done    = new AtomicInteger(0);
-            AtomicInteger success = new AtomicInteger(0);
-            int total = targets.size();
-            for (String ip : targets) {
-                TcpSender.send(ip, cancelPayload, ok -> {
-                    if (ok) success.incrementAndGet();
-                    // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
-                    if (done.incrementAndGet() == total && success.get() == 0 && bleAvailable) {
-                        sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
-                    }
-                });
-            }
+            // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
+            TcpSender.sendToAll(targets, cancelPayload, anySuccess -> {
+                if (!anySuccess && bleAvailable) {
+                    sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
+                }
+            });
         }
 
         int idx = activeCallIds.indexOf(callId);
@@ -534,17 +508,6 @@ public class MainActivity extends AppCompatActivity {
         }
         refreshCallBanner();
         Toast.makeText(this, "호출이 취소되었습니다.", Toast.LENGTH_SHORT).show();
-    }
-
-    private String getLocalIpAddress() {
-        try {
-            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            int ip = wm.getConnectionInfo().getIpAddress();
-            return String.format("%d.%d.%d.%d",
-                    (ip & 0xff), (ip >> 8 & 0xff), (ip >> 16 & 0xff), (ip >> 24 & 0xff));
-        } catch (Exception e) {
-            return "";
-        }
     }
 
     public void openWebPage(String url) {
@@ -566,14 +529,6 @@ public class MainActivity extends AppCompatActivity {
             intent.setData(Uri.parse("market://details?id=" + packageName));
             context.startActivity(intent);
         }
-    }
-
-    private void setButtonImage(ImageView iv, String drawableRes) {
-        if (drawableRes != null && !drawableRes.isEmpty()) {
-            int resId = getResources().getIdentifier(drawableRes, "drawable", getPackageName());
-            if (resId != 0) { iv.setImageResource(resId); return; }
-        }
-        iv.setBackgroundResource(R.drawable.ic_button_placeholder);
     }
 
     private int dpToPx(int dp) {

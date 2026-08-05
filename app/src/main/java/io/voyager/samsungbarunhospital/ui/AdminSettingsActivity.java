@@ -1,8 +1,6 @@
 package io.voyager.samsungbarunhospital.ui;
 
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -350,43 +348,17 @@ public class AdminSettingsActivity extends AppCompatActivity {
         nurseIpListContainer.removeAllViews();
         List<String> ips = AppSettings.getNurseIps(this);
 
-        for (int i = 0; i < ips.size(); i++) {
-            final String ip = ips.get(i);
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setPadding(0, 8, 0, 8);
-
-            TextView tvIp = new TextView(this);
-            tvIp.setText(ip);
-            tvIp.setTextColor(0xFFFFFFFF);
-            tvIp.setTextSize(16f);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            tvIp.setLayoutParams(p);
-
-            Button btnDel = new Button(this);
-            btnDel.setText("삭제");
-            btnDel.setTextSize(13f);
-            btnDel.setTextColor(0xFFFFFFFF);
-            btnDel.setBackgroundColor(0xFFB71C1C);
-            btnDel.setPadding(24, 0, 24, 0);
-            btnDel.setOnClickListener(v -> {
+        for (String ip : ips) {
+            nurseIpListContainer.addView(buildDeletableRow(ip, () -> {
                 List<String> current = AppSettings.getNurseIps(this);
                 current.remove(ip);
                 AppSettings.saveNurseIps(this, current);
                 populateNurseIpList();
-            });
-
-            row.addView(tvIp);
-            row.addView(btnDel);
-            nurseIpListContainer.addView(row);
+            }));
         }
 
         if (ips.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("등록된 간호사 태블릿이 없습니다.");
-            empty.setTextColor(0xFF888888);
-            empty.setTextSize(14f);
-            nurseIpListContainer.addView(empty);
+            nurseIpListContainer.addView(buildEmptyLabel("등록된 간호사 태블릿이 없습니다."));
         }
     }
 
@@ -395,40 +367,51 @@ public class AdminSettingsActivity extends AppCompatActivity {
         List<BleOnlyNurse> nurses = AppSettings.getBleOnlyNurses(this);
 
         for (BleOnlyNurse nurse : nurses) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setPadding(0, 8, 0, 8);
-
-            TextView tvLabel = new TextView(this);
-            tvLabel.setText(nurse.label != null ? nurse.label : ("기기 " + nurse.peerId.substring(0, 8)));
-            tvLabel.setTextColor(0xFFFFFFFF);
-            tvLabel.setTextSize(16f);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            tvLabel.setLayoutParams(p);
-
-            Button btnDel = new Button(this);
-            btnDel.setText("삭제");
-            btnDel.setTextSize(13f);
-            btnDel.setTextColor(0xFFFFFFFF);
-            btnDel.setBackgroundColor(0xFFB71C1C);
-            btnDel.setPadding(24, 0, 24, 0);
-            btnDel.setOnClickListener(v -> {
+            String label = nurse.label != null ? nurse.label : ("기기 " + nurse.peerId.substring(0, 8));
+            bleOnlyNurseListContainer.addView(buildDeletableRow(label, () -> {
                 AppSettings.removeBleOnlyNurse(this, nurse.peerId);
                 populateBleOnlyNurseList();
-            });
-
-            row.addView(tvLabel);
-            row.addView(btnDel);
-            bleOnlyNurseListContainer.addView(row);
+            }));
         }
 
         if (nurses.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("BLE로 등록된 간호사가 없습니다.");
-            empty.setTextColor(0xFF888888);
-            empty.setTextSize(14f);
-            bleOnlyNurseListContainer.addView(empty);
+            bleOnlyNurseListContainer.addView(buildEmptyLabel("BLE로 등록된 간호사가 없습니다."));
         }
+    }
+
+    /** 라벨 텍스트 + "삭제" 버튼 한 행. 간호사 IP 목록·BLE 전용 간호사 목록이 동일한 형태를 쓴다. */
+    private LinearLayout buildDeletableRow(String label, Runnable onDelete) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, 8, 0, 8);
+
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText(label);
+        tvLabel.setTextColor(0xFFFFFFFF);
+        tvLabel.setTextSize(16f);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        tvLabel.setLayoutParams(p);
+
+        Button btnDel = new Button(this);
+        btnDel.setText("삭제");
+        btnDel.setTextSize(13f);
+        btnDel.setTextColor(0xFFFFFFFF);
+        btnDel.setBackgroundColor(0xFFB71C1C);
+        btnDel.setPadding(24, 0, 24, 0);
+        btnDel.setOnClickListener(v -> onDelete.run());
+
+        row.addView(tvLabel);
+        row.addView(btnDel);
+        return row;
+    }
+
+    /** "목록이 비어있음" 안내 텍스트. 간호사 IP·BLE 전용 간호사·근처 기기 검색 목록이 동일한 스타일을 쓴다. */
+    private TextView buildEmptyLabel(String text) {
+        TextView empty = new TextView(this);
+        empty.setText(text);
+        empty.setTextColor(0xFF888888);
+        empty.setTextSize(14f);
+        return empty;
     }
 
     /**
@@ -532,20 +515,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
         }
 
         if (!any) {
-            TextView empty = new TextView(this);
-            empty.setText("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요...");
-            empty.setTextColor(0xFF888888);
-            empty.setTextSize(14f);
-            listContainer.addView(empty);
+            listContainer.addView(buildEmptyLabel("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요..."));
         }
-    }
-
-    private void setThumbImage(ImageView iv, String drawableRes) {
-        if (drawableRes != null && !drawableRes.isEmpty()) {
-            int resId = getResources().getIdentifier(drawableRes, "drawable", getPackageName());
-            if (resId != 0) { iv.setImageResource(resId); return; }
-        }
-        iv.setBackgroundResource(R.drawable.ic_button_placeholder);
     }
 
     private void populateButtonList() {
@@ -564,12 +535,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
             Button    btnEdit  = row.findViewById(R.id.btnEdit);
             Button    btnDel   = row.findViewById(R.id.btnDelete);
 
-            if (config.imagePath != null) {
-                Bitmap bm = BitmapFactory.decodeFile(config.imagePath);
-                if (bm != null) { ivThumb.setImageBitmap(bm); }
-                else { setThumbImage(ivThumb, config.drawableRes); }
-            } else {
-                setThumbImage(ivThumb, config.drawableRes);
+            if (!ButtonImageLoader.tryLoadCustomImage(ivThumb, config, null)) {
+                ButtonImageLoader.setDrawableOrPlaceholder(ivThumb, this, config.drawableRes);
             }
             tvType.setText(ButtonConfig.TYPE_APP.equals(config.type) ? "앱 실행" : "웹 열기");
             tvTarget.setText(config.target);

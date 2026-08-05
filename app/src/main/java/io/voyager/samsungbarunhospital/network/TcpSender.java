@@ -5,8 +5,10 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TcpSender {
 
@@ -43,6 +45,25 @@ public class TcpSender {
                 if (callback != null) callback.onResult(false);
             }
         });
+    }
+
+    /**
+     * 여러 간호사 태블릿에 동시에 전송하고, 전부 응답(성공/실패)이 온 뒤 한 번만 callback을 호출한다
+     * — 하나라도 성공했으면 true. 마지막 응답이 도착한 스레드(POOL의 스레드 중 하나)에서 그대로
+     * 호출되므로, UI를 갱신해야 하면 callback 안에서 runOnUiThread 등으로 직접 넘겨야 한다.
+     */
+    public static void sendToAll(List<String> targetIps, String message, Callback onAllDone) {
+        AtomicInteger done    = new AtomicInteger(0);
+        AtomicInteger success = new AtomicInteger(0);
+        int total = targetIps.size();
+        for (String ip : targetIps) {
+            send(ip, message, ok -> {
+                if (ok) success.incrementAndGet();
+                if (done.incrementAndGet() == total && onAllDone != null) {
+                    onAllDone.onResult(success.get() > 0);
+                }
+            });
+        }
     }
 
     /** 간호사 태블릿에 설정(호출 메시지·버튼 목록)을 요청하고, 응답 원본 라인을 그대로 콜백에 전달 */
