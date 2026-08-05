@@ -121,7 +121,27 @@ Java 쪽 신규/변경 파일: `model/CallItem.java`(senderPeerId 필드 추가)
 
 ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색" 목록에는 **간호사 태블릿뿐 아니라 근처의 다른 환자 태블릿도 그대로 뜬다** — 프로토콜 레벨에 role 필드가 없고, 표시되는 건 오직 `AppSettings.getTabletName()` 문자열뿐이라 최종 판단은 전적으로 사람이 이름을 읽고 하는 것. 잘못 등록하면 이후 호출이 엉뚱한 환자 태블릿으로 유니캐스트되어 간호사가 못 받는 사고로 이어짐. `AdminSettingsActivity.showScanNearbyPeersDialog()`에 경고 문구(⚠ 다른 환자 태블릿도 나타날 수 있음)를 추가하고, `renderNearbyPeerList()`의 "등록" 버튼에 두 번째 확인 다이얼로그(선택한 이름을 다시 보여주고 "등록"/"취소")를 넣어 즉시 1탭으로 등록되지 않게 함. QR코드 기반의 결정적 페어링(간호사가 자기 peerId를 QR로 표시 → 환자가 스캔)이 오등록을 구조적으로 막는 더 확실한 대안이지만, 새 라이브러리(ZXing/ML Kit)·카메라 권한·QR 생성 UI가 추가로 필요해 지금은 채택하지 않음 — 경고+확인 다이얼로그로 실사용에서 부족하다고 판단되면 그때 도입.
 
+### 앱 버튼(유튜브/웨이브 등) 실행 안 되고 플레이스토어로만 가는 문제 (2026-08-05)
+
+안드로이드 12 태블릿에서 `TYPE_APP` 버튼(유튜브, 웨이브)이 실행 안 되고 항상 플레이스토어로 이동하는 버그. 원인은 Android 11+(API30+)의 패키지 가시성(package visibility) 정책 — `<queries>` 선언 없이는 `PackageManager.getLaunchIntentForPackage(packageName)`(`ui/MainActivity.java` `startNewActivity()`)이 앱이 설치돼 있어도 무조건 `null`을 반환하고, 그 결과 코드가 "미설치"로 오판해 `market://` 인텐트로 폴백함. `AndroidManifest.xml`에 아래 `<queries>` 추가로 해결:
+
+```xml
+<queries>
+    <intent>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+</queries>
+```
+
+특정 패키지명(`com.google.android.youtube` 등)을 나열하는 대신 LAUNCHER 카테고리 전체를 질의하도록 선언 — `ButtonEditActivity`에서 관리자가 나중에 임의의 앱 버튼을 추가해도 매니페스트 재수정 없이 계속 동작하게 하기 위함. 이 시점에 `minSdk 24`~`targetSdk 33`(API 27/28 ~ Android 12/13) 범위 전반의 다른 호환성도 함께 점검함 — 알림 채널 O(26)+ 게이팅, `PendingIntent.FLAG_IMMUTABLE`, 잠금화면 표시 플래그, BLE 런타임 권한 분기, `exported` 명시 등은 이미 올바르게 처리되어 있어 별도 수정 불필요했음.
+
+### 배포용 APK 서명 — 아직 디버그 키 (2026-08-05)
+
+`release/` 폴더의 배포용 APK는 현재 **디버그 키스토어로 서명됨**(`apksigner verify --print-certs` 결과 `CN=Android Debug`). `app/build.gradle`에 release용 `signingConfig`가 없어서 릴리스 빌드가 디버그 키로 서명되는 상태 — 사용자가 실기기 검증 전까지는 이 상태를 유지하기로 확인함(2026-08-05 대화). **실제 병동 배포 직전에는 반드시 전용 release 키스토어를 만들어 `signingConfig`를 추가해야 함** — 그렇지 않으면 이 개발 환경이 아닌 다른 곳에서 빌드하거나 디버그 키스토어가 초기화될 때 서명이 달라져서, 이미 설치된 모든 태블릿에서 이후 업데이트가 막히고(전체 재설치 필요) 디버그 빌드라 `debuggable=true` 상태이기도 함. `release/` 폴더는 빌드 산출물이라 `.gitignore`에 추가해 git에는 커밋하지 않음.
+
 ### 다음에 이어서 할 일
+- **실제 배포 전 필수**: 전용 release 키스토어 생성 + `app/build.gradle`에 release `signingConfig` 추가(위 "배포용 APK 서명" 참고).
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.
 - 위 "알려진 한계" 2번(연결 캡 8개)·3번(하드웨어 advertise 미지원) — 실기기에서 문제로 확인되면 우선 대응 필요.
 - "간호사 설정 불러오기" 기능도 실기기(또는 에뮬레이터 2대)로 실제 요청→응답→적용 흐름 검증 필요 — 지금까지는 유닛테스트(`ConfigSyncTest`)와 빌드 성공만 확인됨.
