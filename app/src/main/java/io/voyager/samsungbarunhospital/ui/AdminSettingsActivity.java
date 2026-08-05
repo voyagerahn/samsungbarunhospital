@@ -451,8 +451,15 @@ public class AdminSettingsActivity extends AppCompatActivity {
         hint.setText("등록할 간호사 태블릿 옆에서 이 화면을 열어두세요. 잠시 후 목록에 나타납니다.");
         hint.setTextColor(0xFF888888);
         hint.setTextSize(13f);
-        hint.setPadding(0, 0, 0, 16);
+        hint.setPadding(0, 0, 0, 8);
         container.addView(hint);
+
+        TextView warning = new TextView(this);
+        warning.setText("⚠ 이 목록에는 간호사 태블릿뿐 아니라 근처의 다른 환자 태블릿도 함께 나타날 수 있습니다. 이름을 반드시 확인한 뒤 등록하세요.");
+        warning.setTextColor(0xFFFFB74D);
+        warning.setTextSize(13f);
+        warning.setPadding(0, 0, 0, 16);
+        container.addView(warning);
 
         LinearLayout listContainer = new LinearLayout(this);
         listContainer.setOrientation(LinearLayout.VERTICAL);
@@ -506,10 +513,17 @@ public class AdminSettingsActivity extends AppCompatActivity {
             btnAdd.setTextColor(0xFFFFFFFF);
             btnAdd.setBackgroundColor(0xFF2E7D32);
             btnAdd.setOnClickListener(v -> {
-                AppSettings.addBleOnlyNurse(this, peer.peerId, display);
-                populateBleOnlyNurseList();
-                dialog.dismiss();
-                Toast.makeText(this, "\"" + display + "\"을(를) 간호사로 등록했습니다.", Toast.LENGTH_SHORT).show();
+                new AlertDialog.Builder(this)
+                        .setTitle("간호사로 등록")
+                        .setMessage("\"" + display + "\"을(를) 간호사 태블릿으로 등록할까요?\n\n다른 환자 태블릿을 잘못 등록하면 호출이 전달되지 않으니, 이름이 맞는지 다시 한 번 확인해주세요.")
+                        .setPositiveButton("등록", (d, w) -> {
+                            AppSettings.addBleOnlyNurse(this, peer.peerId, display);
+                            populateBleOnlyNurseList();
+                            dialog.dismiss();
+                            Toast.makeText(this, "\"" + display + "\"을(를) 간호사로 등록했습니다.", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("취소", null)
+                        .show();
             });
 
             row.addView(tv);
