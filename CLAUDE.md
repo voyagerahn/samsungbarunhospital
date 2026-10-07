@@ -19,7 +19,7 @@
 - `network/IncomingCallHandler.java`: TCP/BLE 공통 payload 파서. `CallQueue.add()`가 callId 기준 중복 추가를 막아준다(TCP+BLE로 같은 호출이 동시 도착해도 큐에는 1건만 남음).
 - `data/CallQueue.java`: 스레드안전 싱글톤 큐(`CopyOnWriteArrayList`), 30분 자동 만료, `Handler(Looper.getMainLooper())` 기반 리스너 통지.
 - `data/AppSettings.java`: 간호사 IP 목록(`KEY_NURSE_IPS`), 태블릿 표시 이름(`KEY_TABLET_NAME`), BLE peerId(`KEY_BLE_PEER_ID`, 8바이트 랜덤 hex, 기기별 영구값) 등 SharedPreferences 기반 설정.
-- IP는 관리자가 수동 등록(`AdminSettingsActivity`), 자동 discovery(mDNS 등) 없음.
+- IP는 관리자가 수동 등록하거나, 같은 Wi-Fi면 "근처 Wi-Fi 기기 검색"(mDNS/NSD, `network/NsdDiscovery.java`, 서비스 타입 `_barunhospital._tcp.`, 서비스 이름=태블릿 이름)으로 찾아 등록. 광고는 `AlertReceiverService`가 포트 바인드 직후 등록(이름 변경은 앱 재시작 후 반영). v2.2.0 미만 기기는 광고를 안 하므로 검색에 안 뜸.
 
 ## 간호사 설정 불러오기 (신규, `feature/ble-mesh` 브랜치, TCP만 사용)
 
@@ -147,6 +147,21 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
 `AppSettings.getDefaultButtonConfigs()`에 있던 웨이브 앱 패키지명 `com.movienet.touch.wavveon`이 애초에 실존하지 않는 패키지명이었음(웹 검색으로 확인 — APKMirror/APKPure/APKCombo/APKMonk 등 다수 소스가 일치해서 가리키는 실제 패키지명은 `kr.co.captv.pooqV2`, 구 "푹(pooq)" 서비스 시절 이름을 유지). `<queries>` 수정과 무관하게 패키지명 자체가 틀렸던 것이라, 그 수정만으로는 웨이브가 절대 안 열리는 상태였음. `kr.co.captv.pooqV2`로 교체하고 `versionCode 4→5`, `versionName "2.1.1"→"2.1.2"`로 올림 (`release/삼성바른병원_환자호출_v2.1.2.apk`).
 
 **의도적으로 마이그레이션 코드는 안 넣음**: `getDefaultButtonConfigs()`는 버튼 설정을 한 번도 저장한 적 없는 새 기기에만 적용됨 — 이미 설정을 저장해본 태블릿은 SharedPreferences에 예전 잘못된 패키지명이 그대로 남아있어 자동으로 안 고쳐짐. 이번엔 사용자가 다른 태블릿에도 어차피 APK를 수동으로 옮겨줘야 해서(위 "수동 전달" 방식), 그 김에 **관리자 설정 → 앱 버튼 관리에서 웨이브 버튼을 열어 대상 패키지를 `kr.co.captv.pooqV2`로 직접 재저장**하기로 함 — 코드에 자동 마이그레이션 로직을 추가하는 대신 수동 작업으로 처리하기로 결정.
+
+### 다른 Wi-Fi에서 IP로 등록한 간호사에게 BLE 호출이 안 가던 문제 (2026-10-07, v2.2.0)
+
+증상: 서로 다른 망의 태블릿에서 간호사 IP를 등록하고 호출하면, 환자 쪽은 "✓ 간호사에게 전달되었습니다"가 뜨는데 간호사 쪽 알람이 안 뜸.
+
+- **주원인**: IP 등록 시 TCP(`CONFIG_REQUEST`)로 BLE peerId를 학습하는데, 다른 망이면 이 접속이 실패하고 조용히 넘어감 → peerId 없음 → TCP 실패 후 BLE 폴백(`sendBleToKnownNursePeers`)이 실제로는 아무에게도 안 보냄. 그런데 `MainActivity`가 "BLE 지원 기기"이기만 하면 성공 토스트를 띄웠음.
+- 수정(송신): `reportCallResult()` — TCP 성공="전달되었습니다", BLE로만 보냄="블루투스로 보냈습니다(간호사 확인 시 표시)"(BLE는 ACK 없음), 아무 경로도 없으면 실패 + 이유(블루투스 꺼짐 / '블루투스 연결' 필요). BLE 전송 헬퍼는 실제 전송 대상 수를 반환.
+- 수정(관리자): IP 행마다 "마지막 연결 확인 시각 · 블루투스 연결됨/안 됨" 표시 + "테스트"/"블루투스 연결"/"삭제". "블루투스 연결"은 근처 BLE 기기를 골라 그 IP에 peerId를 직접 연결(`AppSettings.saveNursePeerId`) — 다른 망이라 TCP로 학습 못할 때의 경로. IP 추가 시 연결 실패하면 바로 이 연결을 권함. BLE 전용 간호사 등록과 같은 검색 다이얼로그(`showNearbyBlePicker`, 2차 확인 포함)를 공유.
+- **연결 테스트는 일부러 새 PING 프로토콜을 안 만들고 `CONFIG_REQUEST`를 재사용** — 구버전 수신 측은 모르는 payload를 전부 환자 호출로 해석해서 가짜 알람이 뜨기 때문. 덤으로 peerId 학습도 됨. 성공 시각은 `AppSettings.saveNurseLastContact`(IP→epochMs).
+- 수정(수신): `BleMeshService`가 수신 리스너를 직접 등록하고 peerId를 저장소에서 읽음(START_STICKY 재시작 시 intent=null이라 예전엔 BLE가 아예 안 켜지거나 리스너 없이 패킷이 버려질 수 있었음). 블루투스 ON/OFF 브로드캐스트를 받아 재기동. `BleMeshManager.start()`는 블루투스가 꺼져 있으면 "실행 중"으로 표시하지 않음. 진단 패널에 블루투스 켜짐/꺼짐 표시.
+- 수정(GATT): Android는 우리가 클라이언트로 연결한 상대에 대해서도 GATT 서버 콜백을 올리는데, 이게 기존 클라이언트 연결 항목을 `subscribed=false` 서버 항목으로 덮어써 그 기기로의 전송이 조용히 건너뛰어질 수 있었음 → `BleGattServerManager`가 이미 클라이언트로 등록된 주소는 건드리지 않음.
+- **실기기 미검증**(에뮬레이터는 BLE 없음). 현장 확인 순서: 환자 태블릿 관리자 화면에서 IP 행이 "블루투스: 연결됨"인지 → 아니면 간호사 태블릿 옆에서 "블루투스 연결" → Wi-Fi 끈 상태로 호출 → 간호사 알람 확인.
+
+### UX/디자인 정리 (2026-10-07, v2.2.0, `feature/ux-and-design-polish`)
+`colors.xml` 의미 기반 팔레트로 하드코딩 색 통합, `bg_button_*` 둥근 버튼(ripple), 테마 다크 베이스(AlertDialog가 보라/흰색이던 문제), Pretendard 글꼴(`res/font/pretendard.xml`, OFL, Regular/Bold — APK +3MB; 코드에서 굵기 바꿀 때 `setTypeface(null, …)` 쓰면 시스템 글꼴로 돌아가니 금지), 앱 버튼 편집에 "설치된 앱에서 선택", 버튼 개수 N/6 표시, 글씨 크기 실시간 미리보기, 메시지 저장 시점 안내 문구. 위급도 색상 단계는 사용자 요청으로 제외.
 
 ### 다음에 이어서 할 일
 - **실제 배포 전 필수**: 전용 release 키스토어 생성 + `app/build.gradle`에 release `signingConfig` 추가(위 "배포용 APK 서명" 참고).

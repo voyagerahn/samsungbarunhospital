@@ -23,12 +23,17 @@ import io.voyager.samsungbarunhospital.data.AppSettings;
 import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 import io.voyager.samsungbarunhospital.network.ConfigSync;
+import io.voyager.samsungbarunhospital.network.NsdDiscovery;
 import io.voyager.samsungbarunhospital.network.TcpSender;
 import io.voyager.samsungbarunhospital.network.ble.BleMeshManager;
 import io.voyager.samsungbarunhospital.network.ble.BleMode;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class AdminSettingsActivity extends AppCompatActivity {
 
@@ -41,6 +46,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private LinearLayout bleOnlyNurseListContainer;
     private TextView     tvCurrentIp;
     private TextView     tvBleStatus;
+    private TextView     tvButtonCount;
     private SeekBar      seekAlarmVolume;
     private TextView     tvAlarmVolumeValue;
 
@@ -49,20 +55,29 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private View[]     navIndicators;
     private TextView[] navLabels;
     private View[]     navPages;
-    private static final int NAV_COLOR_SELECTED   = 0xFFFFD54F;
-    private static final int NAV_COLOR_UNSELECTED = 0xFFAAAAAA;
-    private static final int NAV_BG_SELECTED       = 0xFF1E1E38;
+    // getColor()는 Context가 필요해 static final로 못 두고 onCreate에서 한 번만 계산해둔다.
+    private int NAV_COLOR_SELECTED;
+    private int NAV_COLOR_UNSELECTED;
+    private int NAV_BG_SELECTED;
 
     // 글씨 크기 현재값 (sp) — +/- 버튼으로 조절
     private int szLeftRoom, szLeftMsg, szLeftTime;
     private int szListRoom, szListMsg, szListTime;
     private TextView tvLeftRoomSizeVal, tvLeftMsgSizeVal, tvLeftTimeSizeVal;
     private TextView tvListRoomSizeVal, tvListMsgSizeVal, tvListTimeSizeVal;
+    // 실시간 미리보기 — 실제 CallQueueActivity 카드와 같은 배경/색을 그대로 써서 관리자가 왔다갔다
+    // 확인할 필요 없이 이 화면에서 바로 체감할 수 있게 한다.
+    private TextView tvPreviewLeftRoom, tvPreviewLeftMsg, tvPreviewLeftTime;
+    private TextView tvPreviewListRoom, tvPreviewListMsg, tvPreviewListTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_admin_settings);
+
+        NAV_COLOR_SELECTED   = getColor(R.color.text_accent_gold);
+        NAV_COLOR_UNSELECTED = getColor(R.color.text_muted_light);
+        NAV_BG_SELECTED      = getColor(R.color.bg_nav_selected);
 
         etTabletName         = findViewById(R.id.etTabletName);
         etPassword           = findViewById(R.id.etPassword);
@@ -71,6 +86,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         bleOnlyNurseListContainer = findViewById(R.id.bleOnlyNurseListContainer);
         tvCurrentIp          = findViewById(R.id.tvCurrentIp);
         tvBleStatus          = findViewById(R.id.tvBleStatus);
+        tvButtonCount        = findViewById(R.id.tvButtonCount);
 
         setupSidebarNav();
 
@@ -111,6 +127,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvListMsgSizeVal  = findViewById(R.id.tvListMsgSizeVal);
         tvListTimeSizeVal = findViewById(R.id.tvListTimeSizeVal);
 
+        tvPreviewLeftRoom = findViewById(R.id.tvPreviewLeftRoom);
+        tvPreviewLeftMsg  = findViewById(R.id.tvPreviewLeftMsg);
+        tvPreviewLeftTime = findViewById(R.id.tvPreviewLeftTime);
+        tvPreviewListRoom = findViewById(R.id.tvPreviewListRoom);
+        tvPreviewListMsg  = findViewById(R.id.tvPreviewListMsg);
+        tvPreviewListTime = findViewById(R.id.tvPreviewListTime);
+
         refreshFontSizeLabels();
 
         findViewById(R.id.btnLeftRoomMinus).setOnClickListener(v -> { szLeftRoom = Math.max(AppSettings.LEFT_ROOM_MIN, szLeftRoom - 1); refreshFontSizeLabels(); });
@@ -141,6 +164,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
         // 간호사 IP 추가 (다이얼로그)
         findViewById(R.id.btnAddNurseIp).setOnClickListener(v -> showAddIpDialog());
+        findViewById(R.id.btnScanNearbyWifi).setOnClickListener(v -> showScanNearbyWifiDialog());
 
         // 간호사 설정 불러오기
         findViewById(R.id.btnLoadNurseConfig).setOnClickListener(v -> showNurseConfigPicker());
@@ -202,7 +226,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
     }
 
     /** 왼쪽 사이드바 카테고리 클릭 시 해당 페이지만 보이도록 전환한다. */
+    private android.graphics.Typeface navBaseTypeface;
+
     private void setupSidebarNav() {
+        navBaseTypeface = androidx.core.content.res.ResourcesCompat.getFont(this, R.font.pretendard);
         navItems = new View[]{
                 findViewById(R.id.navDeviceInfo), findViewById(R.id.navComm),
                 findViewById(R.id.navDisplay), findViewById(R.id.navMessages),
@@ -237,7 +264,9 @@ public class AdminSettingsActivity extends AppCompatActivity {
             navIndicators[i].setVisibility(isSelected ? View.VISIBLE : View.INVISIBLE);
             navItems[i].setBackgroundColor(isSelected ? NAV_BG_SELECTED : 0x00000000);
             navLabels[i].setTextColor(isSelected ? NAV_COLOR_SELECTED : NAV_COLOR_UNSELECTED);
-            navLabels[i].setTypeface(null, isSelected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            // null을 넘기면 기본 시스템 글꼴로 돌아가 Pretendard가 풀리므로, 앱 글꼴을 기준으로 굵기만 바꾼다.
+            // (현재 typeface를 기준으로 하면 한 번 굵게 된 뒤 NORMAL로 되돌릴 수 없다)
+            navLabels[i].setTypeface(navBaseTypeface, isSelected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
             navPages[i].setVisibility(isSelected ? View.VISIBLE : View.GONE);
         }
     }
@@ -251,19 +280,67 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 .setView(etIp)
                 .setPositiveButton("추가", (d, w) -> {
                     String ip = etIp.getText().toString().trim();
-                    if (ip.isEmpty()) return;
-                    List<String> ips = AppSettings.getNurseIps(this);
-                    if (!ips.contains(ip)) {
-                        ips.add(ip);
-                        AppSettings.saveNurseIps(this, ips);
-                        populateNurseIpList();
-                        learnNurseBlePeerId(ip);
-                    } else {
-                        Toast.makeText(this, "이미 등록된 IP입니다.", Toast.LENGTH_SHORT).show();
-                    }
+                    if (!ip.isEmpty()) addNurseIp(ip);
                 })
                 .setNegativeButton("취소", null)
                 .show();
+    }
+
+    /** IP 직접 입력과 Wi-Fi 자동 검색이 공유하는 등록 흐름. */
+    private void addNurseIp(String ip) {
+        List<String> ips = AppSettings.getNurseIps(this);
+        if (ips.contains(ip)) {
+            Toast.makeText(this, "이미 등록된 IP입니다.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ips.add(ip);
+        AppSettings.saveNurseIps(this, ips);
+        populateNurseIpList();
+
+        // 등록 직후 한 번 접속해서 BLE peerId를 학습한다. 예전에는 실패해도 조용히 넘어갔는데,
+        // 다른 Wi-Fi에 있는 간호사는 여기서 반드시 실패하고 → peerId를 영영 못 배우고 → BLE로도
+        // 호출이 안 가는 원인이 됐다. 실패하면 그 자리에서 블루투스 연결을 권한다.
+        checkNurseConnection(ip, ok -> {
+            if (!ok) offerBluetoothLink(ip);
+        });
+    }
+
+    private void offerBluetoothLink(String ip) {
+        if (!BleMeshManager.isSupported(getApplicationContext())) {
+            Toast.makeText(this, ip + "에 지금 연결할 수 없습니다. 같은 Wi-Fi인지, 간호사 앱이 켜져 있는지 확인하세요.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("연결할 수 없는 IP")
+                .setMessage(ip + "에 지금 연결할 수 없습니다.\n\n"
+                        + "간호사 태블릿이 다른 Wi-Fi에 있다면 IP만으로는 호출이 전달되지 않습니다. "
+                        + "간호사 태블릿 근처에서 블루투스로 찾아 이 IP에 연결해두면, Wi-Fi가 안 될 때 블루투스로 호출합니다.")
+                .setPositiveButton("블루투스로 연결", (d, w) -> showLinkBluetoothDialog(ip))
+                .setNegativeButton("나중에", null)
+                .show();
+    }
+
+    /**
+     * CONFIG_REQUEST로 연결을 확인한다 — 별도 PING 메시지를 새로 만들지 않은 이유: 구버전 간호사
+     * 앱은 모르는 메시지를 전부 "환자 호출"로 해석해서 가짜 알람을 띄우기 때문. CONFIG_REQUEST는
+     * 이미 모든 버전이 이해하고, 응답에 BLE peerId까지 들어 있어 학습도 같이 된다.
+     *
+     * @param onResult 메인 스레드에서 호출됨, null 가능
+     */
+    private void checkNurseConnection(String ip, TcpSender.Callback onResult) {
+        TcpSender.requestConfig(ip, rawResponse -> {
+            ConfigSync.RemoteConfig remote = ConfigSync.parseResponsePayload(rawResponse);
+            boolean ok = remote != null;
+            if (ok) {
+                AppSettings.saveNurseLastContact(this, ip, System.currentTimeMillis());
+                AppSettings.saveNursePeerId(this, ip, remote.blePeerId);
+            }
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                populateNurseIpList();
+                if (onResult != null) onResult.onResult(ok);
+            });
+        });
     }
 
     /** 등록된 간호사 태블릿 중 하나를 골라 그 설정(호출 메시지·버튼)을 불러오는 흐름의 시작점. */
@@ -291,23 +368,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 return;
             }
             AppSettings.saveNursePeerId(this, nurseIp, remote.blePeerId);
+            AppSettings.saveNurseLastContact(this, nurseIp, System.currentTimeMillis());
+            populateNurseIpList();
             confirmApplyRemoteConfig(remote);
         }));
-    }
-
-    /**
-     * IP를 새로 등록할 때 백그라운드로 한 번 TCP 접속해서 그 간호사 태블릿의 BLE peerId를
-     * 미리 학습해둔다(같은 화면에 이미 있는 "설정 불러오기"와 같은 프로토콜 재사용, 조용히
-     * 시도만 하고 실패해도 안내 없음 — 지금 당장 필요한 게 아니라 "나중에 같은 네트워크가
-     * 아닐 때 BLE로 이 태블릿을 콕 집어 부를 수 있도록" 미리 준비해두는 것뿐이라서).
-     */
-    private void learnNurseBlePeerId(String nurseIp) {
-        TcpSender.requestConfig(nurseIp, rawResponse -> {
-            ConfigSync.RemoteConfig remote = ConfigSync.parseResponsePayload(rawResponse);
-            if (remote != null && remote.blePeerId != null) {
-                AppSettings.saveNursePeerId(this, nurseIp, remote.blePeerId);
-            }
-        });
     }
 
     private void confirmApplyRemoteConfig(ConfigSync.RemoteConfig remote) {
@@ -349,17 +413,93 @@ public class AdminSettingsActivity extends AppCompatActivity {
         List<String> ips = AppSettings.getNurseIps(this);
 
         for (String ip : ips) {
-            nurseIpListContainer.addView(buildDeletableRow(ip, () -> {
-                List<String> current = AppSettings.getNurseIps(this);
-                current.remove(ip);
-                AppSettings.saveNurseIps(this, current);
-                populateNurseIpList();
-            }));
+            nurseIpListContainer.addView(buildNurseIpRow(ip));
         }
 
         if (ips.isEmpty()) {
             nurseIpListContainer.addView(buildEmptyLabel("등록된 간호사 태블릿이 없습니다."));
         }
+    }
+
+    /**
+     * IP + 진단 한 줄(마지막 연결 확인 시각 · 블루투스 연결 여부) + 테스트/블루투스 연결/삭제.
+     * "블루투스: 연결 안 됨"이면 Wi-Fi가 안 될 때 이 간호사에게는 BLE로도 호출이 안 간다는 뜻이라,
+     * 관리자가 현장에서 바로 알아보고 조치할 수 있게 행마다 보여준다.
+     */
+    private LinearLayout buildNurseIpRow(String ip) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, 10, 0, 10);
+
+        LinearLayout textArea = new LinearLayout(this);
+        textArea.setOrientation(LinearLayout.VERTICAL);
+        textArea.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tvIp = new TextView(this);
+        tvIp.setText(ip);
+        tvIp.setTextColor(getColor(R.color.text_primary));
+        tvIp.setTextSize(16f);
+        textArea.addView(tvIp);
+
+        long lastContact = AppSettings.getNurseLastContactMs(this, ip);
+        boolean bleLinked = AppSettings.getNursePeerId(this, ip) != null;
+        boolean bleSupported = BleMeshManager.isSupported(getApplicationContext());
+        StringBuilder status = new StringBuilder("마지막 연결 확인: ")
+                .append(lastContact == 0L ? "기록 없음" : formatAgo(lastContact));
+        if (bleSupported) status.append("  ·  블루투스: ").append(bleLinked ? "연결됨" : "연결 안 됨");
+
+        TextView tvStatus = new TextView(this);
+        tvStatus.setText(status);
+        tvStatus.setTextColor(getColor(bleSupported && !bleLinked ? R.color.badge_warning : R.color.text_muted));
+        tvStatus.setTextSize(13f);
+        textArea.addView(tvStatus);
+        row.addView(textArea);
+
+        row.addView(buildRowButton("테스트", R.drawable.bg_button_neutral, v -> {
+            Toast.makeText(this, ip + " 연결 확인 중...", Toast.LENGTH_SHORT).show();
+            checkNurseConnection(ip, ok -> {
+                if (ok) {
+                    Toast.makeText(this, "✓ " + ip + " 연결 정상", Toast.LENGTH_SHORT).show();
+                } else {
+                    offerBluetoothLink(ip);
+                }
+            });
+        }));
+        if (bleSupported) {
+            row.addView(buildRowButton(bleLinked ? "블루투스 재연결" : "블루투스 연결",
+                    R.drawable.bg_button_neutral, v -> showLinkBluetoothDialog(ip)));
+        }
+        row.addView(buildRowButton("삭제", R.drawable.bg_button_danger, v -> {
+            List<String> current = AppSettings.getNurseIps(this);
+            current.remove(ip);
+            AppSettings.saveNurseIps(this, current);
+            populateNurseIpList();
+        }));
+        return row;
+    }
+
+    private Button buildRowButton(String text, int backgroundRes, View.OnClickListener onClick) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setTextSize(13f);
+        btn.setTextColor(getColor(R.color.text_primary));
+        btn.setBackgroundResource(backgroundRes);
+        btn.setPadding(24, 0, 24, 0);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.setMarginStart(12);
+        btn.setLayoutParams(p);
+        btn.setOnClickListener(onClick);
+        return btn;
+    }
+
+    private static String formatAgo(long epochMs) {
+        long minutes = (System.currentTimeMillis() - epochMs) / 60000L;
+        if (minutes <= 0) return "방금 전";
+        if (minutes < 60) return minutes + "분 전";
+        if (minutes < 60 * 24) return (minutes / 60) + "시간 전";
+        return (minutes / (60 * 24)) + "일 전";
     }
 
     private void populateBleOnlyNurseList() {
@@ -379,7 +519,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         }
     }
 
-    /** 라벨 텍스트 + "삭제" 버튼 한 행. 간호사 IP 목록·BLE 전용 간호사 목록이 동일한 형태를 쓴다. */
+    /** 라벨 텍스트 + "삭제" 버튼 한 행 (BLE 전용 간호사 목록). */
     private LinearLayout buildDeletableRow(String label, Runnable onDelete) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -387,21 +527,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
         TextView tvLabel = new TextView(this);
         tvLabel.setText(label);
-        tvLabel.setTextColor(0xFFFFFFFF);
+        tvLabel.setTextColor(getColor(R.color.text_primary));
         tvLabel.setTextSize(16f);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         tvLabel.setLayoutParams(p);
 
-        Button btnDel = new Button(this);
-        btnDel.setText("삭제");
-        btnDel.setTextSize(13f);
-        btnDel.setTextColor(0xFFFFFFFF);
-        btnDel.setBackgroundColor(0xFFB71C1C);
-        btnDel.setPadding(24, 0, 24, 0);
-        btnDel.setOnClickListener(v -> onDelete.run());
-
         row.addView(tvLabel);
-        row.addView(btnDel);
+        row.addView(buildRowButton("삭제", R.drawable.bg_button_danger, v -> onDelete.run()));
         return row;
     }
 
@@ -409,47 +541,68 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private TextView buildEmptyLabel(String text) {
         TextView empty = new TextView(this);
         empty.setText(text);
-        empty.setTextColor(0xFF888888);
+        empty.setTextColor(getColor(R.color.text_muted));
         empty.setTextSize(14f);
         return empty;
     }
 
-    /**
-     * 근처에서 BLE로 광고 중인(ANNOUNCE를 보낸 적 있는) 기기 목록을 보여주고, 하나를 골라 IP 없이
-     * peerId만으로 간호사로 등록한다. 다이얼로그가 떠 있는 동안 1.5초마다 목록을 새로 그려서
-     * 새로 감지되는 기기가 바로 반영되게 한다.
-     */
+    /** 근처 기기 검색에서 한 기기를 고르고 2차 확인까지 끝났을 때 호출됨. */
+    private interface NearbyPeerPicked {
+        void onPicked(String peerId, String displayName);
+    }
+
+    /** "BLE 전용 간호사" 카드 — IP 없이 peerId만으로 간호사를 등록한다. */
     private void showScanNearbyPeersDialog() {
+        Set<String> alreadyRegistered = new HashSet<>();
+        for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) alreadyRegistered.add(n.peerId);
+
+        showNearbyBlePicker("근처 BLE 기기 검색", "등록", "간호사 태블릿으로 등록할까요?", alreadyRegistered,
+                (peerId, name) -> {
+                    AppSettings.addBleOnlyNurse(this, peerId, name);
+                    populateBleOnlyNurseList();
+                    Toast.makeText(this, "\"" + name + "\"을(를) 간호사로 등록했습니다.", Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /**
+     * 이미 IP로 등록된 간호사에 BLE peerId를 직접 연결한다 — 다른 Wi-Fi에 있어 TCP로는 peerId를
+     * 학습할 수 없는 경우를 위한 경로. 이후 Wi-Fi 전송이 실패하면 이 peerId로 블루투스 호출이 간다.
+     */
+    private void showLinkBluetoothDialog(String ip) {
+        showNearbyBlePicker(ip + " 블루투스 연결", "연결", ip + " 간호사 태블릿으로 연결할까요?", new HashSet<>(),
+                (peerId, name) -> {
+                    AppSettings.saveNursePeerId(this, ip, peerId);
+                    populateNurseIpList();
+                    Toast.makeText(this, "✓ " + ip + "에 \"" + name + "\" 블루투스 연결됨", Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /**
+     * 근처에서 BLE로 ANNOUNCE를 보낸 기기 목록을 보여주고 하나를 고르게 한다. 다이얼로그가 떠 있는
+     * 동안 1.5초마다 목록을 새로 그려서 새로 감지되는 기기가 바로 반영되게 한다. ANNOUNCE에는
+     * 간호사/환자 구분이 없으므로, 고른 뒤 이름을 다시 보여주는 2차 확인을 거친다(오등록 방지).
+     */
+    private void showNearbyBlePicker(String title, String actionLabel, String confirmQuestion,
+                                     Set<String> excludedPeerIds, NearbyPeerPicked onPicked) {
         if (!BleMeshManager.isSupported(getApplicationContext())) {
             Toast.makeText(this, "이 기기에서는 BLE를 사용할 수 없습니다.", Toast.LENGTH_LONG).show();
             return;
         }
+        if (!BleMeshManager.isBluetoothEnabled(getApplicationContext())) {
+            Toast.makeText(this, "블루투스가 꺼져 있습니다. 블루투스를 켠 뒤 다시 시도하세요.", Toast.LENGTH_LONG).show();
+            return;
+        }
         BleMeshManager.triggerAnnounceNow();
 
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(40, 20, 40, 20);
-
-        TextView hint = new TextView(this);
-        hint.setText("등록할 간호사 태블릿 옆에서 이 화면을 열어두세요. 잠시 후 목록에 나타납니다.");
-        hint.setTextColor(0xFF888888);
-        hint.setTextSize(13f);
-        hint.setPadding(0, 0, 0, 8);
-        container.addView(hint);
-
-        TextView warning = new TextView(this);
-        warning.setText("⚠ 이 목록에는 간호사 태블릿뿐 아니라 근처의 다른 환자 태블릿도 함께 나타날 수 있습니다. 이름을 반드시 확인한 뒤 등록하세요.");
-        warning.setTextColor(0xFFFFB74D);
-        warning.setTextSize(13f);
-        warning.setPadding(0, 0, 0, 16);
-        container.addView(warning);
-
+        LinearLayout container = buildPickerContainer(
+                "연결할 간호사 태블릿 옆에서 이 화면을 열어두세요. 잠시 후 목록에 나타납니다.",
+                "⚠ 이 목록에는 간호사 태블릿뿐 아니라 근처의 다른 환자 태블릿도 함께 나타날 수 있습니다. 이름을 반드시 확인하세요.");
         LinearLayout listContainer = new LinearLayout(this);
         listContainer.setOrientation(LinearLayout.VERTICAL);
         container.addView(listContainer);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("근처 기기 검색")
+                .setTitle(title)
                 .setView(container)
                 .setNegativeButton("닫기", null)
                 .create();
@@ -458,7 +611,25 @@ public class AdminSettingsActivity extends AppCompatActivity {
         Runnable[] refreshRef = new Runnable[1];
         refreshRef[0] = () -> {
             if (!dialog.isShowing()) return;
-            renderNearbyPeerList(listContainer, dialog);
+            listContainer.removeAllViews();
+            boolean any = false;
+            for (BleMeshManager.DiscoveredPeer peer : BleMeshManager.getDiscoveredPeers()) {
+                if (excludedPeerIds.contains(peer.peerId)) continue;
+                any = true;
+                String display = (peer.name != null && !peer.name.isEmpty()) ? peer.name : ("기기 " + peer.peerId.substring(0, 8));
+                listContainer.addView(buildPickRow(display, null, actionLabel, () ->
+                        new AlertDialog.Builder(this)
+                                .setTitle(actionLabel + " 확인")
+                                .setMessage("\"" + display + "\"을(를) " + confirmQuestion
+                                        + "\n\n다른 환자 태블릿을 잘못 고르면 호출이 전달되지 않으니, 이름이 맞는지 다시 한 번 확인해주세요.")
+                                .setPositiveButton(actionLabel, (d, w) -> {
+                                    dialog.dismiss();
+                                    onPicked.onPicked(peer.peerId, display);
+                                })
+                                .setNegativeButton("취소", null)
+                                .show()));
+            }
+            if (!any) listContainer.addView(buildEmptyLabel("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요..."));
             handler.postDelayed(refreshRef[0], 1500);
         };
         dialog.setOnDismissListener(d -> handler.removeCallbacksAndMessages(null));
@@ -466,62 +637,115 @@ public class AdminSettingsActivity extends AppCompatActivity {
         refreshRef[0].run();
     }
 
-    private void renderNearbyPeerList(LinearLayout listContainer, AlertDialog dialog) {
-        listContainer.removeAllViews();
-        List<String> alreadyRegistered = new ArrayList<>();
-        for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) alreadyRegistered.add(n.peerId);
+    /**
+     * 같은 Wi-Fi에서 이 앱이 켜져 있는 태블릿을 mDNS(NSD)로 찾아 IP를 몰라도 등록할 수 있게 한다.
+     * 찾은 기기를 추가하면 IP 직접 입력과 같은 흐름(addNurseIp)을 탄다.
+     */
+    private void showScanNearbyWifiDialog() {
+        LinearLayout container = buildPickerContainer(
+                "같은 Wi-Fi에 있고 앱이 켜져 있는 태블릿이 나타납니다.",
+                "⚠ 다른 환자 태블릿도 함께 나타날 수 있습니다. 이름을 반드시 확인하세요.");
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        container.addView(listContainer);
 
-        List<BleMeshManager.DiscoveredPeer> peers = BleMeshManager.getDiscoveredPeers();
-        boolean any = false;
-        for (BleMeshManager.DiscoveredPeer peer : peers) {
-            if (alreadyRegistered.contains(peer.peerId)) continue;
-            any = true;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("근처 Wi-Fi 기기 검색")
+                .setView(container)
+                .setNegativeButton("닫기", null)
+                .create();
 
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setPadding(0, 12, 0, 12);
-            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        String myIp = getLocalIpAddress();
+        Map<String, String> found = new LinkedHashMap<>(); // ip → 태블릿 이름
+        Runnable render = () -> {
+            listContainer.removeAllViews();
+            List<String> registered = AppSettings.getNurseIps(this);
+            boolean any = false;
+            for (Map.Entry<String, String> e : found.entrySet()) {
+                String ip = e.getKey(), name = e.getValue();
+                if (registered.contains(ip)) continue;
+                any = true;
+                listContainer.addView(buildPickRow(name, ip, "추가", () ->
+                        new AlertDialog.Builder(this)
+                                .setTitle("간호사 태블릿 추가")
+                                .setMessage("\"" + name + "\" (" + ip + ")을(를) 간호사 태블릿으로 추가할까요?")
+                                .setPositiveButton("추가", (d, w) -> {
+                                    dialog.dismiss();
+                                    addNurseIp(ip);
+                                })
+                                .setNegativeButton("취소", null)
+                                .show()));
+            }
+            if (!any) listContainer.addView(buildEmptyLabel("검색 중... 잠시만 기다려주세요."));
+        };
 
-            TextView tv = new TextView(this);
-            String display = (peer.name != null && !peer.name.isEmpty()) ? peer.name : ("기기 " + peer.peerId.substring(0, 8));
-            tv.setText(display);
-            tv.setTextColor(0xFFFFFFFF);
-            tv.setTextSize(16f);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            tv.setLayoutParams(p);
+        NsdDiscovery discovery = new NsdDiscovery(this, (name, ip) -> {
+            if (ip.equals(myIp)) return;
+            found.put(ip, name);
+            if (dialog.isShowing()) render.run();
+        });
+        dialog.setOnDismissListener(d -> discovery.stop());
+        dialog.show();
+        render.run();
+        discovery.start();
+    }
 
-            Button btnAdd = new Button(this);
-            btnAdd.setText("등록");
-            btnAdd.setTextSize(13f);
-            btnAdd.setTextColor(0xFFFFFFFF);
-            btnAdd.setBackgroundColor(0xFF2E7D32);
-            btnAdd.setOnClickListener(v -> {
-                new AlertDialog.Builder(this)
-                        .setTitle("간호사로 등록")
-                        .setMessage("\"" + display + "\"을(를) 간호사 태블릿으로 등록할까요?\n\n다른 환자 태블릿을 잘못 등록하면 호출이 전달되지 않으니, 이름이 맞는지 다시 한 번 확인해주세요.")
-                        .setPositiveButton("등록", (d, w) -> {
-                            AppSettings.addBleOnlyNurse(this, peer.peerId, display);
-                            populateBleOnlyNurseList();
-                            dialog.dismiss();
-                            Toast.makeText(this, "\"" + display + "\"을(를) 간호사로 등록했습니다.", Toast.LENGTH_SHORT).show();
-                        })
-                        .setNegativeButton("취소", null)
-                        .show();
-            });
+    /** 근처 기기 검색 다이얼로그(BLE·Wi-Fi 공통)의 안내문 + 경고문 머리 부분. */
+    private LinearLayout buildPickerContainer(String hintText, String warningText) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 20, 40, 20);
 
-            row.addView(tv);
-            row.addView(btnAdd);
-            listContainer.addView(row);
+        TextView hint = new TextView(this);
+        hint.setText(hintText);
+        hint.setTextColor(getColor(R.color.text_muted));
+        hint.setTextSize(13f);
+        hint.setPadding(0, 0, 0, 8);
+        container.addView(hint);
+
+        TextView warning = new TextView(this);
+        warning.setText(warningText);
+        warning.setTextColor(getColor(R.color.badge_warning));
+        warning.setTextSize(13f);
+        warning.setPadding(0, 0, 0, 16);
+        container.addView(warning);
+        return container;
+    }
+
+    /** 검색 결과 한 행: 이름(+선택적 부제) + 동작 버튼. */
+    private LinearLayout buildPickRow(String title, String subtitle, String actionLabel, Runnable onAction) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, 12, 0, 12);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        LinearLayout textArea = new LinearLayout(this);
+        textArea.setOrientation(LinearLayout.VERTICAL);
+        textArea.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(getColor(R.color.text_primary));
+        tvTitle.setTextSize(16f);
+        textArea.addView(tvTitle);
+
+        if (subtitle != null) {
+            TextView tvSub = new TextView(this);
+            tvSub.setText(subtitle);
+            tvSub.setTextColor(getColor(R.color.text_muted));
+            tvSub.setTextSize(13f);
+            textArea.addView(tvSub);
         }
 
-        if (!any) {
-            listContainer.addView(buildEmptyLabel("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요..."));
-        }
+        row.addView(textArea);
+        row.addView(buildRowButton(actionLabel, R.drawable.bg_button_success, v -> onAction.run()));
+        return row;
     }
 
     private void populateButtonList() {
         buttonListContainer.removeAllViews();
         List<ButtonConfig> configs = AppSettings.getButtonConfigs(this);
+        tvButtonCount.setText(configs.size() + "/" + AppSettings.MAX_BUTTONS + "개 사용 중");
 
         for (int i = 0; i < configs.size(); i++) {
             ButtonConfig config  = configs.get(i);
@@ -574,6 +798,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvListRoomSizeVal.setText("글씨 " + szListRoom);
         tvListMsgSizeVal .setText("글씨 " + szListMsg);
         tvListTimeSizeVal.setText("글씨 " + szListTime);
+
+        tvPreviewLeftRoom.setTextSize(szLeftRoom);
+        tvPreviewLeftMsg .setTextSize(szLeftMsg);
+        tvPreviewLeftTime.setTextSize(szLeftTime);
+        tvPreviewListRoom.setTextSize(szListRoom);
+        tvPreviewListMsg .setTextSize(szListMsg);
+        tvPreviewListTime.setTextSize(szListTime);
     }
 
     /** 관리자가 현장에서 "왜 근거리 통신이 안 되지?"를 스스로 판단할 수 있게 하는 가벼운 진단 패널. */
@@ -593,17 +824,16 @@ public class AdminSettingsActivity extends AppCompatActivity {
             int connections = BleMeshManager.getConnectionCount();
             long lastActivity = BleMeshManager.getLastActivityAtMs();
 
+            boolean btOn = BleMeshManager.isBluetoothEnabled(getApplicationContext());
+            sb.append("블루투스: ").append(btOn ? "켜짐" : "꺼짐").append("\n");
             sb.append("서비스 실행 중: ").append(BleMeshManager.isRunning() ? "예" : "아니오").append("\n");
             sb.append("현재 연결된 기기: ").append(connections).append("대\n");
 
-            if (lastActivity == 0L) {
-                sb.append("최근 통신: 아직 없음");
-            } else {
-                long minutesAgo = (System.currentTimeMillis() - lastActivity) / 60000L;
-                sb.append("최근 통신: ").append(minutesAgo <= 0 ? "방금 전" : minutesAgo + "분 전");
-            }
+            sb.append("최근 통신: ").append(lastActivity == 0L ? "아직 없음" : formatAgo(lastActivity));
 
-            if (connections == 0) {
+            if (!btOn) {
+                sb.append("\n\n⚠ 블루투스가 꺼져 있어 근거리 통신으로 호출을 주고받을 수 없습니다. 기기 설정에서 블루투스를 켜주세요.");
+            } else if (connections == 0) {
                 sb.append("\n\n⚠ 주변에 연결된 태블릿이 없습니다. 거리가 너무 멀거나 벽 등의 장애물이 있거나, 상대 기기의 블루투스가 꺼져 있을 수 있습니다.");
             }
         } else {

@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.net.nsd.NsdManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -14,6 +15,7 @@ import android.os.Looper;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import io.voyager.samsungbarunhospital.data.AppSettings;
 import io.voyager.samsungbarunhospital.data.CallQueue;
 import io.voyager.samsungbarunhospital.ui.CallQueueActivity;
 
@@ -45,6 +47,7 @@ public class AlertReceiverService extends Service {
     }
 
     private volatile ServerSocket serverSocket;
+    private volatile NsdManager.RegistrationListener nsdRegistration;
     private volatile boolean running = true;
     private final Handler    mainHandler = new Handler(Looper.getMainLooper());
 
@@ -66,6 +69,12 @@ public class AlertReceiverService extends Service {
     private void receiveLoop() {
         try {
             serverSocket = new ServerSocket(TcpSender.PORT);
+            // 포트가 실제로 열린 뒤에만 광고해야, 검색으로 찾은 IP에 바로 접속이 된다.
+            // 이름은 이 시점의 태블릿 이름 — 관리자가 이름을 바꾸면 앱/서비스 재시작 후 반영된다.
+            if (nsdRegistration == null) {
+                nsdRegistration = NsdDiscovery.register(getApplicationContext(),
+                        AppSettings.getTabletName(getApplicationContext()), TcpSender.PORT);
+            }
             while (running) {
                 Socket client = serverSocket.accept();
                 new Thread(() -> handleClient(client), "tcp-client").start();
@@ -165,6 +174,8 @@ public class AlertReceiverService extends Service {
         super.onDestroy();
         instance = null;
         running = false;
+        NsdDiscovery.unregister(getApplicationContext(), nsdRegistration);
+        nsdRegistration = null;
         closeSocket();
     }
 

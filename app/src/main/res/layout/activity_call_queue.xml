@@ -2,14 +2,14 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D0D1A"
+    android:background="@color/bg_root_navy"
     android:orientation="vertical">
 
     <!-- 헤더 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="72dp"
-        android:background="#1A1A2E"
+        android:background="@color/bg_surface"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="24dp">
@@ -19,7 +19,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="🔔 간호사 호출"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_primary"
             android:textSize="26sp"
             android:textStyle="bold" />
 
@@ -27,11 +27,11 @@
             android:id="@+id/tvCount"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="#E53935"
+            android:background="@color/badge_alert"
             android:paddingHorizontal="18dp"
             android:paddingVertical="6dp"
             android:text="대기 0건"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_primary"
             android:textSize="20sp"
             android:textStyle="bold" />
 
@@ -40,11 +40,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
-            android:background="#37474F"
+            android:background="@drawable/bg_button_neutral"
             android:paddingHorizontal="20dp"
             android:paddingVertical="6dp"
             android:text="전체화면"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_primary"
             android:textSize="16sp" />
 
         <Button
@@ -52,11 +52,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
-            android:background="#444466"
+            android:background="@drawable/bg_button_neutral_dark"
             android:paddingHorizontal="20dp"
             android:paddingVertical="6dp"
             android:text="나가기"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_primary"
             android:textSize="16sp" />
 
     </LinearLayout>
@@ -76,7 +76,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="2"
-            android:background="#0A0A22"
+            android:background="@color/bg_panel_accent"
             android:gravity="center_horizontal"
             android:orientation="vertical">
 
@@ -99,7 +99,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="24dp"
                         android:text="⚡ 최우선 대기"
-                        android:textColor="#FFD54F"
+                        android:textColor="@color/text_accent_gold"
                         android:textSize="26sp"
                         android:textStyle="bold" />
 
@@ -108,7 +108,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:gravity="center"
-                        android:textColor="#90CAF9"
+                        android:textColor="@color/text_accent_blue"
                         android:textStyle="bold" />
 
                     <TextView
@@ -117,7 +117,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="20dp"
                         android:gravity="center"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/text_primary"
                         android:textStyle="bold" />
 
                     <TextView
@@ -126,17 +126,17 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
                         android:gravity="center"
-                        android:textColor="#FF8A65" />
+                        android:textColor="@color/text_accent_orange" />
 
                     <Button
                         android:id="@+id/btnPrimaryConfirm"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="28dp"
-                        android:background="#2E7D32"
+                        android:background="@drawable/bg_button_success"
                         android:paddingVertical="16dp"
                         android:text="확인"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/text_primary"
                         android:textSize="22sp"
                         android:textStyle="bold" />
 
@@ -151,7 +151,7 @@
             android:id="@+id/middleDivider"
             android:layout_width="2dp"
             android:layout_height="match_parent"
-            android:background="#2A2A4A" />
+            android:background="@color/divider" />
 
         <!-- 우측: 전체 대기 목록 (60%, 전체화면 모드에서는 숨김) -->
         <LinearLayout
@@ -167,7 +167,7 @@
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="10dp"
                 android:text="전체 대기 목록"
-                android:textColor="#666688"
+                android:textColor="@color/text_section_label"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -197,7 +197,7 @@
         android:layout_weight="1"
         android:gravity="center"
         android:text="대기 중인 호출이 없습니다"
-        android:textColor="#555577"
+        android:textColor="@color/text_disabled"
         android:textSize="24sp"
         android:visibility="gone" />
 

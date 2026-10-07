@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#2D2D44"
+    android:background="@color/bg_row"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="10dp"
@@ -26,7 +26,7 @@
             android:id="@+id/tvType"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#90CAF9"
+            android:textColor="@color/text_accent_blue"
             android:textSize="12sp" />
 
         <TextView
@@ -35,7 +35,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="#CCCCCC"
+            android:textColor="@color/text_hint"
             android:textSize="14sp" />
     </LinearLayout>
 
@@ -44,10 +44,10 @@
         android:layout_width="wrap_content"
         android:layout_height="36dp"
         android:layout_marginStart="8dp"
-        android:background="#1565C0"
+        android:background="@drawable/bg_button_primary"
         android:paddingHorizontal="14dp"
         android:text="편집"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
     <Button
@@ -55,10 +55,10 @@
         android:layout_width="wrap_content"
         android:layout_height="36dp"
         android:layout_marginStart="6dp"
-        android:background="#B71C1C"
+        android:background="@drawable/bg_button_danger"
         android:paddingHorizontal="14dp"
         android:text="삭제"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
 </LinearLayout>

@@ -228,8 +228,8 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(android.view.Gravity.CENTER_VERTICAL);
         card.setBackgroundColor(isPrimary
-                ? Color.parseColor("#1A1500")   // 황금빛 강조 배경
-                : Color.parseColor("#1E1E3A"));
+                ? getColor(R.color.bg_call_card_primary)   // 황금빛 강조 배경
+                : getColor(R.color.bg_call_card));
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -241,10 +241,10 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         TextView tvRoom = new TextView(this);
         tvRoom.setText(item.tabletName);
         tvRoom.setTextColor(isPrimary
-                ? Color.parseColor("#FFD54F")
-                : Color.parseColor("#90CAF9"));
+                ? getColor(R.color.text_accent_gold)
+                : getColor(R.color.text_accent_blue));
         tvRoom.setTextSize(roomSize);
-        tvRoom.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvRoom.setTypeface(tvRoom.getTypeface(), android.graphics.Typeface.BOLD);
         tvRoom.setGravity(android.view.Gravity.CENTER);
         LinearLayout.LayoutParams roomParams = new LinearLayout.LayoutParams(dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT);
         roomParams.setMarginEnd(dpToPx(14));
@@ -253,7 +253,7 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
 
         // 구분선
         View divider = new View(this);
-        divider.setBackgroundColor(Color.parseColor("#444466"));
+        divider.setBackgroundColor(getColor(R.color.divider_light));
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(dpToPx(2), LinearLayout.LayoutParams.MATCH_PARENT);
         divParams.setMarginEnd(dpToPx(14));
         divider.setLayoutParams(divParams);
@@ -268,12 +268,12 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         tvMsg.setText(item.message);
         tvMsg.setTextColor(Color.WHITE);
         tvMsg.setTextSize(msgSize);
-        tvMsg.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvMsg.setTypeface(tvMsg.getTypeface(), android.graphics.Typeface.BOLD);
         textArea.addView(tvMsg);
 
         TextView tvTime = new TextView(this);
         tvTime.setText(timeFormat.format(new Date(item.timestamp)));
-        tvTime.setTextColor(Color.parseColor("#888888"));
+        tvTime.setTextColor(getColor(R.color.text_muted));
         tvTime.setTextSize(timeSize);
         textArea.addView(tvTime);
 
@@ -283,9 +283,9 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         Button btnDone = new Button(this);
         btnDone.setText("확인");
         btnDone.setTextColor(Color.WHITE);
-        btnDone.setBackgroundColor(Color.parseColor("#2E7D32"));
+        btnDone.setBackgroundResource(R.drawable.bg_button_success);
         btnDone.setTextSize(18f);
-        btnDone.setTypeface(null, android.graphics.Typeface.BOLD);
+        btnDone.setTypeface(btnDone.getTypeface(), android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dpToPx(90), LinearLayout.LayoutParams.WRAP_CONTENT);
         btnParams.setMarginStart(12);
         btnDone.setLayoutParams(btnParams);

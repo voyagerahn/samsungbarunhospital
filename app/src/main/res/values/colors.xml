@@ -1,10 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- 배경/표면 (짙은 남색 다크 테마의 레이어들 — 화면마다 살짝 다른 톤을 의도적으로 유지) -->
+    <color name="bg_root_black">#FF000000</color>
+    <color name="bg_root_navy">#FF0D0D1A</color>
+    <color name="bg_surface">#FF1A1A2E</color>
+    <color name="bg_sidebar">#FF15152A</color>
+    <color name="bg_panel_accent">#FF0A0A22</color>
+    <color name="bg_card_frame">#FF242440</color>
+    <color name="bg_row">#FF2D2D44</color>
+    <color name="bg_call_card">#FF1E1E3A</color>
+    <color name="bg_call_card_primary">#FF1A1500</color>
+    <color name="bg_nav_selected">#FF1E1E38</color>
+    <color name="banner_overlay">#E6001A6B</color>
+
+    <color name="divider">#FF2A2A4A</color>
+    <color name="divider_light">#FF444466</color>
+    <color name="divider_translucent">#33FFFFFF</color>
+
+    <!-- 텍스트 -->
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_accent_blue">#FF90CAF9</color>
+    <color name="text_accent_gold">#FFFFD54F</color>
+    <color name="text_accent_orange">#FFFF8A65</color>
+    <color name="text_hint">#FFCCCCCC</color>
+    <color name="text_muted">#FF888888</color>
+    <color name="text_muted_light">#FFAAAAAA</color>
+    <color name="text_muted_lighter">#FFBBBBBB</color>
+    <color name="text_section_label">#FF666688</color>
+    <color name="text_disabled">#FF555577</color>
+    <color name="text_confirmed_green">#FFA5D6A7</color>
+
+    <!-- 액션 (버튼 의미별 고정 색 — 같은 의미는 항상 같은 색을 쓴다) -->
+    <color name="action_primary">#FF1565C0</color>   <!-- 파랑: 편집/불러오기/정보성 동작 -->
+    <color name="action_success">#FF2E7D32</color>   <!-- 초록: 확인/추가/등록 -->
+    <color name="action_danger">#FFC62828</color>    <!-- 빨강: 취소/삭제 (기존에 #B71C1C·#C62828 두 값이 같은 의미로 쓰이던 것을 통일) -->
+    <color name="action_neutral">#FF37474F</color>   <!-- 회색: 보조 동작(전체화면 전환 등) -->
+    <color name="action_neutral_dark">#FF444466</color> <!-- 짙은 회색: 닫기/취소 다이얼로그 -->
+    <color name="badge_alert">#FFE53935</color>      <!-- 대기 건수 배지(버튼 아님 — action_danger와 구분) -->
+    <color name="badge_warning">#FFFFB74D</color>
 </resources>

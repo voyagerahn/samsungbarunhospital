@@ -2,9 +2,15 @@ package io.voyager.samsungbarunhospital.network.ble
 
 import android.app.Notification
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import io.voyager.samsungbarunhospital.data.AppSettings
+import io.voyager.samsungbarunhospital.network.AlertReceiverService
 
 /**
  * Thin foreground service wrapping [BleMeshManager]'s lifecycle. Kept separate from
@@ -20,26 +26,57 @@ class BleMeshService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 3
         private const val SERVICE_CHANNEL_ID = "service_channel"
-        private const val EXTRA_PEER_ID = "peer_id"
 
         @JvmStatic
-        fun start(context: android.content.Context, peerIdHex: String) {
-            val intent = Intent(context, BleMeshService::class.java)
-            intent.putExtra(EXTRA_PEER_ID, peerIdHex)
-            context.startForegroundService(intent)
+        fun start(context: Context) {
+            context.startForegroundService(Intent(context, BleMeshService::class.java))
         }
+    }
+
+    /**
+     * 서비스 시작 시점에 블루투스가 꺼져 있으면 GATT 서버/클라이언트가 아무것도 못 한 채로
+     * "실행 중" 상태에 머물렀다 — 나중에 블루투스를 켜도 복구가 안 돼서, 송신 측은 보냈다고
+     * 생각하는데 이 기기는 아무것도 못 받는 상태가 된다. 블루투스 상태 변화를 받아 재기동한다.
+     */
+    private val bluetoothStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                BluetoothAdapter.STATE_ON -> {
+                    BleMeshManager.stop()
+                    startMesh()
+                }
+                BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> BleMeshManager.stop()
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        val peerId = intent?.getStringExtra(EXTRA_PEER_ID)
-        if (peerId != null) {
-            BleMeshManager.start(applicationContext, peerId)
-        }
+        startMesh()
         return START_STICKY
     }
 
+    /**
+     * 수신 리스너를 Activity가 아니라 여기서 등록한다 — START_STICKY로 시스템이 서비스만
+     * 재시작한 경우(MainActivity.onCreate를 안 거침)에도 받은 호출이 버려지지 않게.
+     * peerId도 intent extra 대신 저장소에서 바로 읽는다(재시작 시 intent가 null로 오기 때문).
+     */
+    private fun startMesh() {
+        BleMeshManager.setReceiveListener(object : BleMeshManager.ReceiveListener {
+            override fun onPayloadReceived(payload: String, fromPeerId: String) {
+                AlertReceiverService.handleIncomingFromBle(payload, fromPeerId)
+            }
+        })
+        BleMeshManager.start(applicationContext, AppSettings.getOrCreateBlePeerId(applicationContext))
+    }
+
     override fun onDestroy() {
+        try { unregisterReceiver(bluetoothStateReceiver) } catch (_: Exception) {}
         BleMeshManager.stop()
         super.onDestroy()
     }

@@ -59,6 +59,13 @@ object BleMeshManager {
     @JvmStatic
     fun isSupported(context: Context): Boolean = getMode(context) != BleMode.UNSUPPORTED
 
+    /** 권한과 별개로 블루투스 자체가 켜져 있는지 — 꺼져 있으면 BLE로는 아무것도 주고받을 수 없다. */
+    @JvmStatic
+    fun isBluetoothEnabled(context: Context): Boolean {
+        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+        return manager?.adapter?.isEnabled == true
+    }
+
     /** For a lightweight admin-facing diagnostic panel — not used by the call flow itself. */
     @JvmStatic
     fun isRunning(): Boolean = started
@@ -76,6 +83,9 @@ object BleMeshManager {
         if (started) return
         val resolvedMode = getMode(context)
         if (resolvedMode == BleMode.UNSUPPORTED) return
+        // 블루투스가 꺼진 상태로 "실행 중" 표시만 남기지 않는다 — BleMeshService가 블루투스가
+        // 켜지는 순간(ACTION_STATE_CHANGED) 다시 start()를 부른다.
+        if (!isBluetoothEnabled(context)) return
 
         mode = resolvedMode
         myPeerId = myPeerIdHex.hexToByteArray() ?: randomBytes(BleMeshConstants.PEER_ID_SIZE)
@@ -140,7 +150,11 @@ object BleMeshManager {
     // 그래서 근처의 다른 환자 태블릿이 "나한테 온 호출"로 착각해 자기 화면에 알림을 띄우는
     // 일이 없다(bitchat의 recipientID/isPacketAddressedToMe와 같은 패턴).
 
-    /** 호출을 보낼 간호사 태블릿의 BLE peerId를 모르면(TCP로 한 번도 학습한 적 없으면) 호출 못함. */
+    /**
+     * 호출을 보낼 간호사 태블릿의 BLE peerId를 모르면 호출 못함 — peerId는 같은 Wi-Fi에서 TCP로
+     * 학습하거나, 관리자 화면에서 근처 BLE 기기를 직접 골라(IP에 "블루투스 연결" 또는 BLE 전용
+     * 간호사 등록) 얻는다.
+     */
     @JvmStatic
     fun sendCallToPeer(recipientPeerIdHex: String, payload: String) =
         sendUnicast(BlePacketType.CALL, recipientPeerIdHex, payload, cacheIfOffline = false)

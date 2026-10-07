@@ -22,6 +22,7 @@ public class AppSettings {
     private static final String KEY_BUTTON_CONFIGS  = "button_configs";
     private static final String KEY_NURSE_IPS        = "nurse_ips";
     private static final String KEY_NURSE_BLE_PEER_IDS = "nurse_ble_peer_ids"; // {ip: peerIdHex}
+    private static final String KEY_NURSE_LAST_CONTACT = "nurse_last_contact"; // {ip: epochMs} — 관리자 화면 진단용
     private static final String KEY_BLE_ONLY_NURSES  = "ble_only_nurses"; // [{peerId, label}] — IP 없이 BLE로만 등록
     private static final String KEY_BLE_PEER_ID      = "ble_peer_id";
     private static final String KEY_ALARM_VOLUME     = "alarm_volume";
@@ -177,6 +178,28 @@ public class AppSettings {
             JSONObject obj = existing != null ? new JSONObject(existing) : new JSONObject();
             obj.put(ip, peerIdHex);
             prefs(ctx).edit().putString(KEY_NURSE_BLE_PEER_IDS, obj.toString()).apply();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /** 그 IP와 마지막으로 TCP 통신에 성공한 시각(epoch ms), 한 번도 없으면 0. */
+    public static long getNurseLastContactMs(Context ctx, String ip) {
+        String json = prefs(ctx).getString(KEY_NURSE_LAST_CONTACT, null);
+        if (json == null) return 0L;
+        try {
+            return new JSONObject(json).optLong(ip, 0L);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    public static void saveNurseLastContact(Context ctx, String ip, long epochMs) {
+        try {
+            String existing = prefs(ctx).getString(KEY_NURSE_LAST_CONTACT, null);
+            JSONObject obj = existing != null ? new JSONObject(existing) : new JSONObject();
+            obj.put(ip, epochMs);
+            prefs(ctx).edit().putString(KEY_NURSE_LAST_CONTACT, obj.toString()).apply();
         } catch (Exception e) {
             e.printStackTrace();
         }

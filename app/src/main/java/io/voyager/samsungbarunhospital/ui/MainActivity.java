@@ -299,7 +299,7 @@ public class MainActivity extends AppCompatActivity {
             btn.setText(message);
             btn.setTextSize(18f);
             btn.setTextColor(android.graphics.Color.WHITE);
-            btn.setBackgroundColor(android.graphics.Color.parseColor("#1565C0"));
+            btn.setBackgroundResource(R.drawable.bg_button_primary);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, 120);
             params.setMargins(0, 0, 0, 16);
@@ -315,7 +315,7 @@ public class MainActivity extends AppCompatActivity {
         btnCancel.setText("취소");
         btnCancel.setTextSize(16f);
         btnCancel.setTextColor(android.graphics.Color.WHITE);
-        btnCancel.setBackgroundColor(android.graphics.Color.parseColor("#555555"));
+        btnCancel.setBackgroundResource(R.drawable.bg_button_neutral_dark);
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 100);
         cancelParams.setMargins(0, 8, 0, 0);
@@ -327,19 +327,16 @@ public class MainActivity extends AppCompatActivity {
         dialogRef[0].show();
     }
 
-    /** 권한이 확인된 이후(이미 있었거나 방금 승인됨) BLE mesh 수신 리스너 등록 + 서비스 기동. */
+    /** 권한이 확인된 이후(이미 있었거나 방금 승인됨) BLE mesh 서비스 기동 — 수신 리스너는 서비스가 직접 등록. */
     private void startBleMeshIfSupported() {
         if (!BleMeshManager.isSupported(getApplicationContext())) return;
-        BleMeshManager.setReceiveListener((payload, fromPeerId) ->
-                AlertReceiverService.handleIncomingFromBle(payload, fromPeerId));
-        BleMeshService.start(getApplicationContext(), AppSettings.getOrCreateBlePeerId(this));
+        BleMeshService.start(getApplicationContext());
     }
 
     // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
     private void sendCallMessage(String message) {
         List<String> targets = AppSettings.getNurseIps(this);
         List<BleOnlyNurse> bleOnlyNurses = AppSettings.getBleOnlyNurses(this);
-        boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
         if (targets.isEmpty() && bleOnlyNurses.isEmpty()) {
             Toast.makeText(this, "등록된 간호사 태블릿이 없습니다.\n관리자 설정에서 IP를 추가하세요.", Toast.LENGTH_LONG).show();
             return;
@@ -353,14 +350,10 @@ public class MainActivity extends AppCompatActivity {
 
         // BLE 전용 간호사는 TCP 경로가 아예 없으므로(한 번도 같은 네트워크였던 적 없음),
         // TCP 성공/실패와 무관하게 항상 시도한다.
-        if (bleAvailable && !bleOnlyNurses.isEmpty()) {
-            sendBleToBleOnlyNurses(bleOnlyNurses, payload, /*isCancel=*/false);
-        }
+        int bleOnlySent = sendBleToBleOnlyNurses(bleOnlyNurses, payload, /*isCancel=*/false);
 
         if (targets.isEmpty()) {
-            activeCallIds.add(callId);
-            activeCallMsgs.add(message);
-            refreshCallBanner();
+            reportCallResult(callId, message, false, bleOnlySent);
             return;
         }
 
@@ -369,20 +362,41 @@ public class MainActivity extends AppCompatActivity {
             // 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 안 쏨(불필요한 중복
             // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
             // 실패했을 때만 BLE로 폴백.
-            if (!anySuccess && bleAvailable) {
-                sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
-            }
-            runOnUiThread(() -> {
-                if (anySuccess || bleAvailable) {
-                    Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
-                    activeCallIds.add(callId);
-                    activeCallMsgs.add(message);
-                    refreshCallBanner();
-                } else {
-                    Toast.makeText(this, "전달 실패: 간호사 단말기에 연결할 수 없습니다.", Toast.LENGTH_LONG).show();
-                }
-            });
+            int bleFallbackSent = anySuccess ? 0 : sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
+            runOnUiThread(() -> reportCallResult(callId, message, anySuccess, bleOnlySent + bleFallbackSent));
         });
+    }
+
+    /**
+     * 실제로 보낸 경로에 맞춰 결과를 알린다. 예전에는 TCP가 실패해도 "BLE가 지원되는 기기"이기만
+     * 하면 "전달되었습니다"라고 표시했는데, 다른 Wi-Fi에서 IP만 등록된 간호사는 BLE peerId를 한 번도
+     * 학습하지 못해 BLE로도 실제로는 아무것도 안 보내지는 경우가 있었다 — 환자 쪽은 "갔다"고 보이는데
+     * 간호사 쪽에는 알람이 안 뜨는 원인. BLE는 수신 확인(ACK)이 없으므로 "전달됨"이 아니라 "보냄"으로
+     * 표시하고, 간호사 확인(CONFIRMED)이 오면 배너에서 완료로 바뀐다.
+     */
+    private void reportCallResult(String callId, String message, boolean tcpSuccess, int bleSentCount) {
+        if (tcpSuccess) {
+            Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+        } else if (bleSentCount > 0) {
+            Toast.makeText(this, "블루투스로 호출을 보냈습니다.\n간호사가 확인하면 화면에 표시됩니다.", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "전달 실패: 간호사 태블릿에 연결할 수 없습니다." + bleUnavailableHint(), Toast.LENGTH_LONG).show();
+            return;
+        }
+        activeCallIds.add(callId);
+        activeCallMsgs.add(message);
+        refreshCallBanner();
+    }
+
+    /** BLE로도 못 보낸 이유를 현장에서 바로 조치할 수 있게 한 줄로 알려준다. */
+    private String bleUnavailableHint() {
+        if (!BleMeshManager.isSupported(getApplicationContext())) return "";
+        if (!BleMeshManager.isBluetoothEnabled(getApplicationContext())) return "\n(블루투스가 꺼져 있습니다)";
+        return "\n다른 Wi-Fi에 있는 간호사라면 관리자 설정 → 통신 설정에서 '블루투스 연결'로 등록하세요.";
+    }
+
+    private boolean isBleSendable() {
+        return BleMeshManager.isSupported(getApplicationContext()) && BleMeshManager.isRunning();
     }
 
     private void refreshCallBanner() {
@@ -405,7 +419,7 @@ public class MainActivity extends AppCompatActivity {
 
             TextView tvMsg = new TextView(this);
             tvMsg.setText("✓ 호출 완료: " + msg);
-            tvMsg.setTextColor(android.graphics.Color.parseColor("#A5D6A7"));
+            tvMsg.setTextColor(getColor(R.color.text_confirmed_green));
             tvMsg.setTextSize(16f);
             row.addView(tvMsg);
             activeCallsContainer.addView(row);
@@ -428,7 +442,7 @@ public class MainActivity extends AppCompatActivity {
 
             TextView tvMsg = new TextView(this);
             tvMsg.setText(msg);
-            tvMsg.setTextColor(android.graphics.Color.parseColor("#90CAF9"));
+            tvMsg.setTextColor(getColor(R.color.text_accent_blue));
             tvMsg.setTextSize(16f);
             LinearLayout.LayoutParams tvParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
             tvMsg.setLayoutParams(tvParams);
@@ -436,7 +450,7 @@ public class MainActivity extends AppCompatActivity {
             Button btnCancel = new Button(this);
             btnCancel.setText("취소");
             btnCancel.setTextColor(android.graphics.Color.WHITE);
-            btnCancel.setBackgroundColor(android.graphics.Color.parseColor("#C62828"));
+            btnCancel.setBackgroundResource(R.drawable.bg_button_danger);
             btnCancel.setTextSize(14f);
             btnCancel.setPadding(dpToPx(16), dpToPx(6), dpToPx(16), dpToPx(6));
             btnCancel.setOnClickListener(v -> cancelCall(callId, msg));
@@ -451,28 +465,31 @@ public class MainActivity extends AppCompatActivity {
      * TCP가 다 실패했을 때의 BLE 폴백 — 등록된 간호사 IP 중 BLE peerId를 학습해둔 것에게만
      * 콕 집어서(유니캐스트) 보낸다. 아무한테나 broadcast하면 근처의 다른 환자 태블릿도 "나한테
      * 온 호출"로 착각해서 자기 화면에 알림을 띄우게 되므로, peerId를 모르는 간호사는 그냥
-     * 건너뛴다(관리자 설정에서 그 간호사 IP를 추가/설정 불러오기 하면 학습됨).
+     * 건너뛴다(같은 Wi-Fi에서 IP 추가/설정 불러오기, 또는 관리자 화면의 "블루투스 연결"로 학습됨).
+     *
+     * @return 실제로 BLE 전송을 시도한 대상 수(0이면 BLE로는 아무것도 안 보내짐)
      */
-    private void sendBleToKnownNursePeers(List<String> nurseIps, String payload, boolean isCancel) {
+    private int sendBleToKnownNursePeers(List<String> nurseIps, String payload, boolean isCancel) {
         List<String> peerIds = new ArrayList<>();
         for (String ip : nurseIps) {
             String peerId = AppSettings.getNursePeerId(this, ip);
             if (peerId != null) peerIds.add(peerId);
         }
-        sendBleUnicast(peerIds, payload, isCancel);
+        return sendBleUnicast(peerIds, payload, isCancel);
     }
 
     /**
      * IP를 한 번도 몰랐던(한 번도 같은 네트워크였던 적 없는) 간호사 — "근처 기기 검색"으로 직접
      * 등록된 목록. TCP 경로 자체가 없으므로 TCP 성공/실패와 무관하게 항상 BLE로 시도한다.
      */
-    private void sendBleToBleOnlyNurses(List<BleOnlyNurse> nurses, String payload, boolean isCancel) {
+    private int sendBleToBleOnlyNurses(List<BleOnlyNurse> nurses, String payload, boolean isCancel) {
         List<String> peerIds = new ArrayList<>();
         for (BleOnlyNurse n : nurses) peerIds.add(n.peerId);
-        sendBleUnicast(peerIds, payload, isCancel);
+        return sendBleUnicast(peerIds, payload, isCancel);
     }
 
-    private void sendBleUnicast(List<String> peerIds, String payload, boolean isCancel) {
+    private int sendBleUnicast(List<String> peerIds, String payload, boolean isCancel) {
+        if (peerIds.isEmpty() || !isBleSendable()) return 0;
         for (String peerId : peerIds) {
             if (isCancel) {
                 BleMeshManager.sendCancelToPeer(peerId, payload);
@@ -480,22 +497,18 @@ public class MainActivity extends AppCompatActivity {
                 BleMeshManager.sendCallToPeer(peerId, payload);
             }
         }
+        return peerIds.size();
     }
 
     private void cancelCall(String callId, String message) {
         String cancelPayload = "CANCEL|" + callId;
         List<String> targets = AppSettings.getNurseIps(this);
-        List<BleOnlyNurse> bleOnlyNurses = AppSettings.getBleOnlyNurses(this);
-        boolean bleAvailable = BleMeshManager.isSupported(getApplicationContext());
-
-        if (bleAvailable && !bleOnlyNurses.isEmpty()) {
-            sendBleToBleOnlyNurses(bleOnlyNurses, cancelPayload, /*isCancel=*/true);
-        }
+        sendBleToBleOnlyNurses(AppSettings.getBleOnlyNurses(this), cancelPayload, /*isCancel=*/true);
 
         if (!targets.isEmpty()) {
             // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
             TcpSender.sendToAll(targets, cancelPayload, anySuccess -> {
-                if (!anySuccess && bleAvailable) {
+                if (!anySuccess) {
                     sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
                 }
             });

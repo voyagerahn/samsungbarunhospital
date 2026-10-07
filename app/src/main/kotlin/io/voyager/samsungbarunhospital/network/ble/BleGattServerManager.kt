@@ -97,6 +97,12 @@ class BleGattServerManager(
         val callback = object : BluetoothGattServerCallback() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
                 if (!isActive) return
+                // Android는 우리가 클라이언트로 연결을 건 상대에 대해서도 GATT 서버 콜백을 같이
+                // 올려보낸다(물리 링크가 하나라서). 이미 클라이언트 연결로 등록된 주소를 여기서
+                // 서버 연결(subscribed=false)로 덮어쓰면, broadcast()가 그 기기를 "아직 구독 안 함"
+                // 으로 보고 조용히 건너뛰어 호출이 전달되지 않는다 — 클라이언트 쪽 항목은 클라이언트
+                // 콜백(BleGattClientManager)이 스스로 관리하게 둔다.
+                if (connectionManager.get(device.address)?.isClient == true) return
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
                         if (connectionManager.isFull()) {
