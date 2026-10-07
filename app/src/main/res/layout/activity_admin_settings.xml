@@ -177,6 +177,35 @@
 
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/navDiag"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/navDiagIndicator"
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="@color/action_primary"
+                    android:visibility="invisible" />
+
+                <TextView
+                    android:id="@+id/navDiagLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:text="진단"
+                    android:textColor="@color/text_muted_light"
+                    android:textSize="16sp" />
+
+            </LinearLayout>
+
         </LinearLayout>
 
         <!-- 오른쪽 설정 내용 -->
@@ -892,6 +921,177 @@
                             android:text="+ 버튼 추가"
                             android:textColor="@color/text_primary"
                             android:textSize="16sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 페이지: 진단 (블루투스 자가진단 + 통신 기록) — 개발자가 실기기 없이 현장 문제를 판단하기 위한 화면 -->
+            <ScrollView
+                android:id="@+id/pageDiag"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <!-- 카드: 현장 안내 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="블루투스 호출이 안 될 때"
+                            android:textColor="@color/text_accent_blue"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="4dp"
+                            android:text="1. 문제가 생긴 호출을 한 번 더 해봅니다\n2. 환자 태블릿과 간호사 태블릿 각각에서 이 화면의 &quot;자가진단 실행&quot;을 누릅니다\n3. 각 태블릿에서 &quot;기록 공유&quot;를 눌러 개발자에게 보냅니다 (두 태블릿 모두)"
+                            android:textColor="@color/text_hint"
+                            android:textSize="14sp" />
+
+                    </LinearLayout>
+
+                    <!-- 카드: 블루투스 자가진단 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="블루투스 자가진단"
+                            android:textColor="@color/text_accent_blue"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:text="지금 이 태블릿의 블루투스 통신 상태를 점검합니다. 결과는 통신 기록에도 함께 저장됩니다"
+                            android:textColor="@color/text_muted"
+                            android:textSize="13sp" />
+
+                        <Button
+                            android:id="@+id/btnRunDiag"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:background="@drawable/bg_button_primary"
+                            android:text="자가진단 실행"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/tvDiagResult"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:lineSpacingExtra="4dp"
+                            android:textColor="@color/text_hint"
+                            android:textIsSelectable="true"
+                            android:textSize="14sp"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <!-- 카드: 통신 기록 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="블루투스 통신 기록"
+                            android:textColor="@color/text_accent_blue"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvDiagLogStats"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="12dp"
+                            android:textColor="@color/text_muted"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnShareDiagLog"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_button_success"
+                                android:text="기록 공유"
+                                android:textColor="@color/text_primary"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btnRefreshDiagLog"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_button_neutral"
+                                android:text="새로고침"
+                                android:textColor="@color/text_primary"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btnClearDiagLog"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_button_danger"
+                                android:text="기록 전체 삭제"
+                                android:textColor="@color/text_primary"
+                                android:textSize="15sp" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvDiagLog"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:background="@color/bg_panel_accent"
+                            android:fontFamily="monospace"
+                            android:padding="12dp"
+                            android:textColor="@color/text_muted_lighter"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp" />
 
                     </LinearLayout>
 

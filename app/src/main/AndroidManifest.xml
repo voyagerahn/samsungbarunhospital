@@ -93,6 +93,17 @@
             android:name=".network.ble.BleMeshService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- 진단 기록 파일 공유용 (AdminSettingsActivity "기록 공유") -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.diagfileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diag_share_paths" />
+        </provider>
     </application>
 
 </manifest>

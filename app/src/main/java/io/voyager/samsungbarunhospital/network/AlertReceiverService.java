@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat;
 
 import io.voyager.samsungbarunhospital.data.AppSettings;
 import io.voyager.samsungbarunhospital.data.CallQueue;
+import io.voyager.samsungbarunhospital.data.DiagLog;
 import io.voyager.samsungbarunhospital.ui.CallQueueActivity;
 
 import java.io.BufferedReader;
@@ -55,6 +56,7 @@ public class AlertReceiverService extends Service {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        DiagLog.init(this);
         createNotificationChannels();
         startForeground(1, buildServiceNotification());
     }
@@ -113,7 +115,19 @@ public class AlertReceiverService extends Service {
 
     /** BLE mesh 수신 경로(BleMeshManager.ReceiveListener)에서 호출하는 정적 진입점. */
     public static void handleIncomingFromBle(String payload, String fromPeerId) {
-        react(IncomingCallHandler.parseAndApply(payload, null, fromPeerId));
+        IncomingCallHandler.Result result = IncomingCallHandler.parseAndApply(payload, null, fromPeerId);
+        if (instance == null) {
+            DiagLog.log("BLE수신", "⚠ 호출 수신 서비스가 꺼져 있어 알람을 띄우지 못함 (" + result.kind + ")");
+        } else if (result.kind == IncomingCallHandler.Kind.NEW_CALL) {
+            DiagLog.log("BLE수신", "새 호출 → 호출 목록 추가, 알람 화면 표시");
+        } else if (result.kind == IncomingCallHandler.Kind.IGNORED) {
+            DiagLog.log("BLE수신", "이미 받은 호출(Wi-Fi로 먼저 도착 등)이거나 형식 오류 → 무시");
+        } else if (result.kind == IncomingCallHandler.Kind.CONFIRMED) {
+            DiagLog.log("BLE수신", confirmListener != null
+                    ? "확인응답 → 환자 화면 '호출 완료' 표시"
+                    : "⚠ 확인응답 받았으나 환자 메인 화면이 열려 있지 않아 표시 못함");
+        }
+        react(result);
     }
 
     private static void react(IncomingCallHandler.Result result) {

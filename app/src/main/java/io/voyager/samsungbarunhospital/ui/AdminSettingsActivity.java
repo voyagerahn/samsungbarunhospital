@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
+import io.voyager.samsungbarunhospital.data.DiagLog;
 import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 import io.voyager.samsungbarunhospital.network.ConfigSync;
@@ -27,6 +28,7 @@ import io.voyager.samsungbarunhospital.network.NsdDiscovery;
 import io.voyager.samsungbarunhospital.network.TcpSender;
 import io.voyager.samsungbarunhospital.network.ble.BleMeshManager;
 import io.voyager.samsungbarunhospital.network.ble.BleMode;
+import io.voyager.samsungbarunhospital.network.ble.BlePermissions;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -47,6 +49,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private TextView     tvCurrentIp;
     private TextView     tvBleStatus;
     private TextView     tvButtonCount;
+    private TextView     tvDiagResult, tvDiagLog, tvDiagLogStats;
     private SeekBar      seekAlarmVolume;
     private TextView     tvAlarmVolumeValue;
 
@@ -73,6 +76,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        DiagLog.init(this);
         setContentView(R.layout.activity_admin_settings);
 
         NAV_COLOR_SELECTED   = getColor(R.color.text_accent_gold);
@@ -88,6 +92,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvBleStatus          = findViewById(R.id.tvBleStatus);
         tvButtonCount        = findViewById(R.id.tvButtonCount);
 
+        setupDiagPage();
         setupSidebarNav();
 
         etMessages = new EditText[]{
@@ -233,22 +238,22 @@ public class AdminSettingsActivity extends AppCompatActivity {
         navItems = new View[]{
                 findViewById(R.id.navDeviceInfo), findViewById(R.id.navComm),
                 findViewById(R.id.navDisplay), findViewById(R.id.navMessages),
-                findViewById(R.id.navButtons)
+                findViewById(R.id.navButtons), findViewById(R.id.navDiag)
         };
         navIndicators = new View[]{
                 findViewById(R.id.navDeviceInfoIndicator), findViewById(R.id.navCommIndicator),
                 findViewById(R.id.navDisplayIndicator), findViewById(R.id.navMessagesIndicator),
-                findViewById(R.id.navButtonsIndicator)
+                findViewById(R.id.navButtonsIndicator), findViewById(R.id.navDiagIndicator)
         };
         navLabels = new TextView[]{
                 findViewById(R.id.navDeviceInfoLabel), findViewById(R.id.navCommLabel),
                 findViewById(R.id.navDisplayLabel), findViewById(R.id.navMessagesLabel),
-                findViewById(R.id.navButtonsLabel)
+                findViewById(R.id.navButtonsLabel), findViewById(R.id.navDiagLabel)
         };
         navPages = new View[]{
                 findViewById(R.id.pageDeviceInfo), findViewById(R.id.pageComm),
                 findViewById(R.id.pageDisplay), findViewById(R.id.pageMessages),
-                findViewById(R.id.pageButtons)
+                findViewById(R.id.pageButtons), findViewById(R.id.pageDiag)
         };
 
         for (int i = 0; i < navItems.length; i++) {
@@ -269,6 +274,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
             navLabels[i].setTypeface(navBaseTypeface, isSelected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
             navPages[i].setVisibility(isSelected ? View.VISIBLE : View.GONE);
         }
+        if (navPages[selected].getId() == R.id.pageDiag) refreshDiagLog();
     }
 
     private void showAddIpDialog() {
@@ -841,6 +847,215 @@ public class AdminSettingsActivity extends AppCompatActivity {
         }
 
         tvBleStatus.setText(sb.toString());
+    }
+
+    // ── 진단 탭: 블루투스 자가진단 + 통신 기록 ─────────────────────────────────
+    // 개발자가 실기기를 못 만지는 배포 구조라, 현장에서 이 결과를 파일로 공유받아 원인을 판단한다.
+
+    private static final int DIAG_LOG_DISPLAY_LINES = 300;
+    private static final String DIAG_SHARE_DIR = "diag_share";
+
+    private String lastDiagnosis = null;
+
+    private void setupDiagPage() {
+        tvDiagResult   = findViewById(R.id.tvDiagResult);
+        tvDiagLog      = findViewById(R.id.tvDiagLog);
+        tvDiagLogStats = findViewById(R.id.tvDiagLogStats);
+        findViewById(R.id.btnRunDiag).setOnClickListener(v -> runBleSelfDiagnosis());
+        findViewById(R.id.btnRefreshDiagLog).setOnClickListener(v -> refreshDiagLog());
+        findViewById(R.id.btnShareDiagLog).setOnClickListener(v -> shareDiagLog());
+        findViewById(R.id.btnClearDiagLog).setOnClickListener(v -> confirmClearDiagLog());
+    }
+
+    private void runBleSelfDiagnosis() {
+        android.content.Context app = getApplicationContext();
+        List<String> warnings = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+
+        boolean btOn = BleMeshManager.isBluetoothEnabled(app);
+        boolean permitted = BlePermissions.hasAll(app);
+        BleMode mode = BleMeshManager.getMode(app);
+        boolean running = BleMeshManager.isRunning();
+        int links = BleMeshManager.getConnectionCount();
+
+        sb.append("태블릿 이름: ").append(AppSettings.getTabletName(this))
+          .append(" / 내 BLE ID: ").append(AppSettings.getOrCreateBlePeerId(this).substring(0, 8)).append('\n');
+        sb.append("블루투스: ").append(btOn ? "켜짐" : "꺼짐").append('\n');
+        if (!btOn) warnings.add("블루투스가 꺼져 있습니다 — 기기 설정에서 켜주세요.");
+        sb.append("근처 기기 권한: ").append(permitted ? "허용됨" : "없음").append('\n');
+        if (!permitted) warnings.add("근처 기기(블루투스/위치) 권한이 없습니다 — 설정 → 앱 → 권한에서 허용하세요.");
+        sb.append("모드: ").append(mode == BleMode.FULL ? "정상" : mode == BleMode.CENTRAL_ONLY ? "제한(Android 7)" : "사용 불가").append('\n');
+        if (mode == BleMode.CENTRAL_ONLY) warnings.add("Android 7 기기는 다른 기기에게 발견될 수 없습니다 — 상대 태블릿이 Android 8 이상이어야 연결됩니다.");
+        sb.append("BLE 실행 중: ").append(running ? "예" : "아니오").append('\n');
+        if (btOn && permitted && !running) warnings.add("BLE가 실행 중이 아닙니다 — 앱을 완전히 종료 후 다시 실행해보세요.");
+
+        Boolean advHw = BleMeshManager.isAdvertisingHardwareSupported(app);
+        String adv;
+        if (mode != BleMode.FULL) adv = "해당 없음(모드 제한)";
+        else if (advHw == null) adv = "알 수 없음(블루투스 꺼짐)";
+        else if (!advHw) adv = "불가 — 하드웨어 미지원";
+        else adv = BleMeshManager.isAdvertising() ? "켜짐" : "꺼짐";
+        sb.append("광고(다른 기기가 이 기기를 찾을 수 있음): ").append(adv).append('\n');
+        if (mode == BleMode.FULL && Boolean.FALSE.equals(advHw)) {
+            warnings.add("이 기기는 하드웨어상 블루투스 광고를 못 합니다 — 상대 태블릿이 먼저 이 기기를 찾을 수 없으니, 상대가 광고 가능한 기기여야 합니다.");
+        } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && !BleMeshManager.isAdvertising()) {
+            warnings.add("광고가 켜져 있지 않습니다 — 통신 기록의 [BLE광고] 오류를 확인하세요.");
+        }
+
+        sb.append("연결된 기기: ").append(links).append("대\n");
+        if (running && links == 0) warnings.add("연결된 기기가 0대입니다 — 상대 태블릿이 너무 멀거나, 블루투스가 꺼져 있거나, 앱이 꺼져 있을 수 있습니다.");
+
+        List<BleMeshManager.DiscoveredPeer> nearby = BleMeshManager.getDiscoveredPeers();
+        sb.append("근처에서 감지된 기기: ").append(nearby.size()).append("대");
+        for (BleMeshManager.DiscoveredPeer p : nearby) {
+            sb.append("\n  · ").append(p.name != null && !p.name.isEmpty() ? p.name : "(이름 없음)")
+              .append(" (").append(p.peerId.substring(0, 8)).append(')');
+        }
+        sb.append('\n');
+        long last = BleMeshManager.getLastActivityAtMs();
+        sb.append("마지막 블루투스 수신: ").append(last == 0L ? "없음" : formatAgo(last)).append('\n');
+
+        // 호출 대상 간호사 — 환자 태블릿에서만 의미 있음
+        sb.append("호출 대상 간호사(블루투스):");
+        int targets = 0;
+        for (String ip : AppSettings.getNurseIps(this)) {
+            String peerId = AppSettings.getNursePeerId(this, ip);
+            targets++;
+            sb.append("\n  · IP ").append(ip).append(": ");
+            if (peerId == null) {
+                sb.append("블루투스 연결 안 됨");
+                warnings.add(ip + " 간호사는 블루투스 연결이 안 되어 있어 Wi-Fi가 안 될 때 호출이 가지 않습니다 — 통신 설정에서 '블루투스 연결'을 하세요.");
+            } else {
+                boolean online = BleMeshManager.isPeerOnline(peerId);
+                sb.append(peerId.substring(0, 8)).append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
+                if (!online && running) warnings.add(ip + " 간호사 태블릿(" + peerId.substring(0, 8) + ")이 근처에서 감지되지 않습니다.");
+            }
+        }
+        for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
+            targets++;
+            boolean online = BleMeshManager.isPeerOnline(n.peerId);
+            sb.append("\n  · BLE 전용 ").append(n.label != null ? n.label : "").append(" (").append(n.peerId.substring(0, 8)).append(')')
+              .append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
+            if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : n.peerId.substring(0, 8)) + "이(가) 근처에서 감지되지 않습니다.");
+        }
+        if (targets == 0) sb.append(" 없음 (간호사 태블릿이면 정상)");
+
+        StringBuilder result = new StringBuilder();
+        if (warnings.isEmpty()) {
+            result.append("✓ 이상 없음\n\n");
+        } else {
+            result.append("⚠ 확인 필요 ").append(warnings.size()).append("건\n");
+            for (String w : warnings) result.append("- ").append(w).append('\n');
+            result.append('\n');
+        }
+        result.append(sb);
+
+        lastDiagnosis = result.toString();
+        tvDiagResult.setText(lastDiagnosis);
+        tvDiagResult.setVisibility(View.VISIBLE);
+        for (String line : lastDiagnosis.split("\n")) {
+            if (!line.trim().isEmpty()) DiagLog.log("자가진단", line);
+        }
+        refreshDiagLog();
+    }
+
+    private void refreshDiagLog() {
+        DiagLog.stats(stats -> runOnUiThread(() -> tvDiagLogStats.setText(stats)));
+        DiagLog.readAll(text -> {
+            // 최신 기록이 위로 오도록 뒤집고, 화면에는 최근 일부만 (전체는 "기록 공유"로)
+            String[] lines = text.split("\n");
+            StringBuilder sb = new StringBuilder();
+            int shown = 0;
+            for (int i = lines.length - 1; i >= 0 && shown < DIAG_LOG_DISPLAY_LINES; i--) {
+                if (lines[i].isEmpty()) continue;
+                sb.append(lines[i]).append('\n');
+                shown++;
+            }
+            String display = shown == 0 ? "기록 없음" : sb.toString();
+            runOnUiThread(() -> tvDiagLog.setText(display));
+        });
+    }
+
+    /**
+     * 기기 정보 + 마지막 자가진단 + 전체 기록을 파일 하나로 묶어 공유한다. 텍스트(EXTRA_TEXT)로 넘기면
+     * 기록이 클 때 Intent 크기 한도(~1MB)를 넘어 앱이 죽을 수 있어서 파일(FileProvider)로 보낸다.
+     */
+    private void shareDiagLog() {
+        Toast.makeText(this, "기록 파일을 만드는 중...", Toast.LENGTH_SHORT).show();
+        String header = buildDiagShareHeader();
+        DiagLog.readAll(text -> {
+            try {
+                java.io.File shareDir = new java.io.File(getCacheDir(), DIAG_SHARE_DIR);
+                deleteDiagShareFiles(shareDir);
+                shareDir.mkdirs();
+                String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.US).format(new java.util.Date());
+                java.io.File out = new java.io.File(shareDir,
+                        "diag_" + AppSettings.getOrCreateBlePeerId(this).substring(0, 8) + "_" + stamp + ".txt");
+                try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                    os.write(header.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    os.write((text.isEmpty() ? "(기록 없음)\n" : text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
+                        this, getPackageName() + ".diagfileprovider", out);
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.putExtra(Intent.EXTRA_SUBJECT, "[호출앱 진단] " + AppSettings.getTabletName(this));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                runOnUiThread(() -> {
+                    try {
+                        startActivity(Intent.createChooser(send, "진단 기록 보내기"));
+                    } catch (Exception e) {
+                        Toast.makeText(this, "공유할 수 있는 앱이 없습니다.", Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "기록 파일을 만들지 못했습니다: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private String buildDiagShareHeader() {
+        String version = "?";
+        try {
+            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            version = info.versionName + " (" + info.versionCode + ")";
+        } catch (Exception ignored) {}
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== 삼성바른병원 호출앱 진단 기록 ===\n");
+        sb.append("생성 시각: ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date())).append('\n');
+        sb.append("태블릿 이름: ").append(AppSettings.getTabletName(this)).append('\n');
+        sb.append("앱 버전: ").append(version).append('\n');
+        sb.append("기기: ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL)
+          .append(" / Android ").append(android.os.Build.VERSION.RELEASE).append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n");
+        sb.append("내 BLE ID: ").append(AppSettings.getOrCreateBlePeerId(this)).append('\n');
+        sb.append("Wi-Fi IP: ").append(getLocalIpAddress()).append("\n\n");
+        sb.append("=== 마지막 자가진단 ===\n").append(lastDiagnosis != null ? lastDiagnosis : "(이번에 실행 안 함)\n").append('\n');
+        sb.append("=== 통신 기록 (오래된 순) ===\n");
+        return sb.toString();
+    }
+
+    private void confirmClearDiagLog() {
+        new AlertDialog.Builder(this)
+                .setTitle("기록 전체 삭제")
+                .setMessage("저장된 블루투스 통신 기록을 모두 삭제할까요?\n삭제한 기록은 되돌릴 수 없습니다.")
+                .setPositiveButton("삭제", (d, w) -> DiagLog.clear(remaining -> {
+                    deleteDiagShareFiles(new java.io.File(getCacheDir(), DIAG_SHARE_DIR));
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, remaining == 0 ? "✓ 기록을 모두 삭제했습니다."
+                                : "⚠ 기록 파일 " + remaining + "개를 삭제하지 못했습니다.", Toast.LENGTH_LONG).show();
+                        refreshDiagLog();
+                    });
+                }))
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    /** 공유용으로 만든 임시 파일은 다음 공유/전체 삭제 때 지운다 — 기록 사본이 캐시에 남지 않게. */
+    private static void deleteDiagShareFiles(java.io.File shareDir) {
+        java.io.File[] files = shareDir.listFiles();
+        if (files == null) return;
+        for (java.io.File f : files) f.delete();
     }
 
     private String getLocalIpAddress() {

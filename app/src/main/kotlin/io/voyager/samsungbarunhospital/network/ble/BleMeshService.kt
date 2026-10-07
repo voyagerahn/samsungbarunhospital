@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import io.voyager.samsungbarunhospital.data.AppSettings
+import io.voyager.samsungbarunhospital.data.DiagLog
 import io.voyager.samsungbarunhospital.network.AlertReceiverService
 
 /**
@@ -42,21 +43,28 @@ class BleMeshService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                 BluetoothAdapter.STATE_ON -> {
+                    DiagLog.log("BLE상태", "블루투스 켜짐 → BLE 재시작")
                     BleMeshManager.stop()
                     startMesh()
                 }
-                BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> BleMeshManager.stop()
+                BluetoothAdapter.STATE_TURNING_OFF -> {
+                    DiagLog.log("BLE상태", "⚠ 블루투스 꺼짐 → BLE 중지 (블루투스로 호출 주고받기 불가)")
+                    BleMeshManager.stop()
+                }
+                BluetoothAdapter.STATE_OFF -> BleMeshManager.stop()
             }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        DiagLog.init(this)
         registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
+        if (intent == null) DiagLog.log("BLE상태", "시스템이 BLE 서비스를 재시작함")
         startMesh()
         return START_STICKY
     }

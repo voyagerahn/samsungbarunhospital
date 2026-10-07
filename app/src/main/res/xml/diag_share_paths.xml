@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 관리자 "진단" 탭의 "기록 공유"가 만드는 임시 파일만 다른 앱(메신저·메일)에 노출한다. -->
+<paths>
+    <cache-path name="diag_share" path="diag_share/" />
+</paths>

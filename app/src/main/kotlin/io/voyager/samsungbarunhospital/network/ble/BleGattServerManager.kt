@@ -16,6 +16,7 @@ import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
+import io.voyager.samsungbarunhospital.data.DiagLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,6 +51,9 @@ class BleGattServerManager(
     private var advertiseCallback: AdvertiseCallback? = null
     private var advertiseRetryCount = 0
     @Volatile private var isActive = false
+    @Volatile private var advertising = false
+
+    fun isAdvertising(): Boolean = advertising
 
     fun characteristicUuid() = BleMeshConstants.CHARACTERISTIC_UUID
 
@@ -62,6 +66,7 @@ class BleGattServerManager(
         }
         if (bluetoothAdapter?.isEnabled != true || advertiser == null) {
             Log.e(TAG, "Bluetooth disabled or advertiser unavailable")
+            DiagLog.log("BLE광고", "⚠ 광고 시작 불가: " + if (bluetoothAdapter?.isEnabled != true) "블루투스 꺼짐" else "이 기기는 BLE 광고 기능이 없음 — 다른 기기가 이 기기를 찾을 수 없음")
             return false
         }
         isActive = true
@@ -76,6 +81,7 @@ class BleGattServerManager(
     @Suppress("MissingPermission")
     fun stop() {
         isActive = false
+        advertising = false
         stopAdvertising()
         try {
             connectionManager.all().filter { !it.isClient }.forEach { gattServer?.cancelConnection(it.device) }
@@ -107,6 +113,7 @@ class BleGattServerManager(
                     BluetoothProfile.STATE_CONNECTED -> {
                         if (connectionManager.isFull()) {
                             Log.w(TAG, "Connection cap reached, rejecting ${device.address}")
+                            DiagLog.log("BLE연결", "⚠ 최대 연결 수(${BleMeshConstants.MAX_CONNECTIONS}대) 초과로 …${device.address.takeLast(5)} 연결 거부")
                             try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
                             return
                         }
@@ -209,6 +216,7 @@ class BleGattServerManager(
         if (bluetoothAdapter == null || advertiser == null) return
         if (bluetoothAdapter.isMultipleAdvertisementSupported != true) {
             Log.w(TAG, "Multiple advertisement not supported on this device")
+            DiagLog.log("BLE광고", "⚠ 이 기기 하드웨어가 BLE 광고를 지원하지 않음 — 다른 기기가 이 기기를 먼저 찾을 수 없고, 이 기기가 찾아가 연결할 때만 통신 가능")
             return
         }
 
@@ -233,11 +241,15 @@ class BleGattServerManager(
         advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
                 advertiseRetryCount = 0
+                advertising = true
                 Log.i(TAG, "Advertising started")
+                DiagLog.log("BLE광고", "광고 시작됨 (다른 기기가 이 기기를 찾을 수 있음)")
             }
 
             override fun onStartFailure(errorCode: Int) {
                 Log.e(TAG, "Advertising failed: $errorCode")
+                advertising = false
+                DiagLog.log("BLE광고", "⚠ 광고 실패: 오류코드 $errorCode (${advertiseErrorText(errorCode)})")
                 if (errorCode != ADVERTISE_FAILED_ALREADY_STARTED &&
                     errorCode != ADVERTISE_FAILED_DATA_TOO_LARGE &&
                     errorCode != ADVERTISE_FAILED_FEATURE_UNSUPPORTED
@@ -262,6 +274,15 @@ class BleGattServerManager(
         } catch (e: Exception) {
             Log.w(TAG, "Error stopping advertising: ${e.message}")
         }
+    }
+
+    private fun advertiseErrorText(code: Int): String = when (code) {
+        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "광고 데이터 너무 큼"
+        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "다른 앱이 광고 슬롯을 다 씀, 재시도함"
+        AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "이미 시작됨"
+        AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "블루투스 내부 오류, 재시도함"
+        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "기기가 광고 미지원"
+        else -> "알 수 없음"
     }
 
     private fun scheduleAdvertiseRestart() {

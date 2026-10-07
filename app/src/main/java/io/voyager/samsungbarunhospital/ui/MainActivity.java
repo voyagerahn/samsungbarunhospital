@@ -27,6 +27,7 @@ import android.widget.ViewFlipper;
 
 import io.voyager.samsungbarunhospital.R;
 import io.voyager.samsungbarunhospital.data.AppSettings;
+import io.voyager.samsungbarunhospital.data.DiagLog;
 import io.voyager.samsungbarunhospital.model.BleOnlyNurse;
 import io.voyager.samsungbarunhospital.model.ButtonConfig;
 import io.voyager.samsungbarunhospital.network.AlertReceiverService;
@@ -69,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        DiagLog.init(this);
         // registerForActivityResult()는 Activity가 STARTED 상태가 되기 전에 등록해야 하므로 onCreate 최상단에서 처리
         blePermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
@@ -351,6 +353,10 @@ public class MainActivity extends AppCompatActivity {
         // BLE 전용 간호사는 TCP 경로가 아예 없으므로(한 번도 같은 네트워크였던 적 없음),
         // TCP 성공/실패와 무관하게 항상 시도한다.
         int bleOnlySent = sendBleToBleOnlyNurses(bleOnlyNurses, payload, /*isCancel=*/false);
+        if (!bleOnlyNurses.isEmpty()) {
+            DiagLog.log("BLE송신", "호출 #" + callId.substring(0, 8) + ": BLE 전용 간호사 " + bleOnlyNurses.size()
+                    + "명 → " + (bleOnlySent > 0 ? "블루투스 전송" : "⚠ 전송 못함" + bleNotSendableReason()));
+        }
 
         if (targets.isEmpty()) {
             reportCallResult(callId, message, false, bleOnlySent);
@@ -363,6 +369,7 @@ public class MainActivity extends AppCompatActivity {
             // 전송을 없애 CallQueue dedup 레이스 발생 자체를 줄임). TCP가 전부
             // 실패했을 때만 BLE로 폴백.
             int bleFallbackSent = anySuccess ? 0 : sendBleToKnownNursePeers(targets, payload, /*isCancel=*/false);
+            if (!anySuccess) logWifiFallback("호출 #" + callId.substring(0, 8), targets, bleFallbackSent);
             runOnUiThread(() -> reportCallResult(callId, message, anySuccess, bleOnlySent + bleFallbackSent));
         });
     }
@@ -393,6 +400,32 @@ public class MainActivity extends AppCompatActivity {
         if (!BleMeshManager.isSupported(getApplicationContext())) return "";
         if (!BleMeshManager.isBluetoothEnabled(getApplicationContext())) return "\n(블루투스가 꺼져 있습니다)";
         return "\n다른 Wi-Fi에 있는 간호사라면 관리자 설정 → 통신 설정에서 '블루투스 연결'로 등록하세요.";
+    }
+
+    /**
+     * 블루투스 디버깅에 필요한 Wi-Fi 쪽 기록은 이 한 줄뿐 — IP로 등록된 간호사는 Wi-Fi가 실패해야
+     * 블루투스로 넘어가므로, 이게 없으면 블루투스 기록이 비어 있을 때 "블루투스 고장"인지
+     * "Wi-Fi가 성공해서 안 쓴 것"인지 구분할 수 없다.
+     */
+    private void logWifiFallback(String what, List<String> nurseIps, int bleSent) {
+        int linked = 0;
+        for (String ip : nurseIps) if (AppSettings.getNursePeerId(this, ip) != null) linked++;
+        String detail;
+        if (bleSent > 0) {
+            detail = "블루투스로 " + bleSent + "대에 전송";
+        } else if (linked == 0) {
+            detail = "⚠ 블루투스 연결된 간호사가 없어 아무 데도 못 보냄 (관리자 설정에서 '블루투스 연결' 필요)";
+        } else {
+            detail = "⚠ 블루투스 전송 못함" + bleNotSendableReason();
+        }
+        DiagLog.log("BLE송신", what + ": Wi-Fi 실패(IP " + nurseIps.size() + "개, 그중 블루투스 연결 " + linked + "개) → " + detail);
+    }
+
+    private String bleNotSendableReason() {
+        if (!BleMeshManager.isSupported(getApplicationContext())) return " (권한 없음/미지원)";
+        if (!BleMeshManager.isBluetoothEnabled(getApplicationContext())) return " (블루투스 꺼짐)";
+        if (!BleMeshManager.isRunning()) return " (BLE 미실행)";
+        return "";
     }
 
     private boolean isBleSendable() {
@@ -509,7 +542,8 @@ public class MainActivity extends AppCompatActivity {
             // TCP가 하나라도 성공했으면 같은 네트워크로 이미 닿은 것 — BLE는 불필요
             TcpSender.sendToAll(targets, cancelPayload, anySuccess -> {
                 if (!anySuccess) {
-                    sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
+                    int sent = sendBleToKnownNursePeers(targets, cancelPayload, /*isCancel=*/true);
+                    logWifiFallback("취소 #" + callId.substring(0, Math.min(8, callId.length())), targets, sent);
                 }
             });
         }

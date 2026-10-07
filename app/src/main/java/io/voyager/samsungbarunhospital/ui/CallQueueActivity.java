@@ -24,6 +24,7 @@ import io.voyager.samsungbarunhospital.model.CallItem;
 import io.voyager.samsungbarunhospital.network.AlertReceiverService;
 import io.voyager.samsungbarunhospital.network.TcpSender;
 import io.voyager.samsungbarunhospital.network.ble.BleMeshManager;
+import io.voyager.samsungbarunhospital.data.DiagLog;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -219,8 +220,13 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         }
         if (item.senderPeerId != null && !item.senderPeerId.isEmpty()
                 && BleMeshManager.isSupported(getApplicationContext())) {
+            DiagLog.log("BLE송신", "간호사가 호출 #" + shortId(item.id) + " 확인 → 환자 태블릿 " + shortId(item.senderPeerId) + "에 확인응답");
             BleMeshManager.sendConfirmed(item.senderPeerId, confirmPayload);
         }
+    }
+
+    private static String shortId(String id) {
+        return id.length() > 8 ? id.substring(0, 8) : id;
     }
 
     private View buildListItemView(CallItem item, boolean isPrimary, int roomSize, int msgSize, int timeSize) {
