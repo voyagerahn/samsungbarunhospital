@@ -378,7 +378,7 @@ public class MainActivity extends AppCompatActivity {
         if (tcpSuccess) {
             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
         } else if (bleSentCount > 0) {
-            Toast.makeText(this, "블루투스로 호출을 보냈습니다.\n간호사가 확인하면 화면에 표시됩니다.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "블루투스로 호출했습니다.\n간호사 확인 시 '호출 완료'로 바뀝니다.", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, "전달 실패: 간호사 태블릿에 연결할 수 없습니다." + bleUnavailableHint(), Toast.LENGTH_LONG).show();
             return;

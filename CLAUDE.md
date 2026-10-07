@@ -153,7 +153,7 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
 증상: 서로 다른 망의 태블릿에서 간호사 IP를 등록하고 호출하면, 환자 쪽은 "✓ 간호사에게 전달되었습니다"가 뜨는데 간호사 쪽 알람이 안 뜸.
 
 - **주원인**: IP 등록 시 TCP(`CONFIG_REQUEST`)로 BLE peerId를 학습하는데, 다른 망이면 이 접속이 실패하고 조용히 넘어감 → peerId 없음 → TCP 실패 후 BLE 폴백(`sendBleToKnownNursePeers`)이 실제로는 아무에게도 안 보냄. 그런데 `MainActivity`가 "BLE 지원 기기"이기만 하면 성공 토스트를 띄웠음.
-- 수정(송신): `reportCallResult()` — TCP 성공="전달되었습니다", BLE로만 보냄="블루투스로 보냈습니다(간호사 확인 시 표시)"(BLE는 ACK 없음), 아무 경로도 없으면 실패 + 이유(블루투스 꺼짐 / '블루투스 연결' 필요). BLE 전송 헬퍼는 실제 전송 대상 수를 반환.
+- 수정(송신): `reportCallResult()` — TCP 성공="전달되었습니다", BLE로만 보냄="블루투스로 호출했습니다. 간호사 확인 시 '호출 완료'로 바뀝니다"(BLE는 ACK 없음 — 간호사가 확인을 누르면 CONFIRMED가 돌아와 배너가 "✓ 호출 완료"로 바뀜), 아무 경로도 없으면 실패 + 이유(블루투스 꺼짐 / '블루투스 연결' 필요). BLE 전송 헬퍼는 실제 전송 대상 수를 반환.
 - 수정(관리자): IP 행마다 "마지막 연결 확인 시각 · 블루투스 연결됨/안 됨" 표시 + "테스트"/"블루투스 연결"/"삭제". "블루투스 연결"은 근처 BLE 기기를 골라 그 IP에 peerId를 직접 연결(`AppSettings.saveNursePeerId`) — 다른 망이라 TCP로 학습 못할 때의 경로. IP 추가 시 연결 실패하면 바로 이 연결을 권함. BLE 전용 간호사 등록과 같은 검색 다이얼로그(`showNearbyBlePicker`, 2차 확인 포함)를 공유.
 - **연결 테스트는 일부러 새 PING 프로토콜을 안 만들고 `CONFIG_REQUEST`를 재사용** — 구버전 수신 측은 모르는 payload를 전부 환자 호출로 해석해서 가짜 알람이 뜨기 때문. 덤으로 peerId 학습도 됨. 성공 시각은 `AppSettings.saveNurseLastContact`(IP→epochMs).
 - 수정(수신): `BleMeshService`가 수신 리스너를 직접 등록하고 peerId를 저장소에서 읽음(START_STICKY 재시작 시 intent=null이라 예전엔 BLE가 아예 안 켜지거나 리스너 없이 패킷이 버려질 수 있었음). 블루투스 ON/OFF 브로드캐스트를 받아 재기동. `BleMeshManager.start()`는 블루투스가 꺼져 있으면 "실행 중"으로 표시하지 않음. 진단 패널에 블루투스 켜짐/꺼짐 표시.
