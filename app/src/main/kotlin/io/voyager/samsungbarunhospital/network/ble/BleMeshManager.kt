@@ -87,7 +87,7 @@ object BleMeshManager {
         // 블루투스가 꺼진 상태로 "실행 중" 표시만 남기지 않는다 — BleMeshService가 블루투스가
         // 켜지는 순간(ACTION_STATE_CHANGED) 다시 start()를 부른다.
         if (!isBluetoothEnabled(context)) {
-            DiagLog.log("BLE상태", "시작 보류: 블루투스 꺼짐 (켜지면 자동 시작)")
+            DiagLog.log("BLE상태", "블루투스가 꺼져 있어 BLE를 시작하지 못함 (켜지면 자동 시작)")
             return
         }
 
@@ -104,12 +104,8 @@ object BleMeshManager {
                 // 콜백 스레드는 즉시 반환하게 한다.
                 mainScope.launch { handleRawBytes(bytes, fromAddress) }
             }
-            override fun onDeviceConnected(address: String) {
-                DiagLog.log("BLE연결", "기기 연결됨 …${address.takeLast(5)} (현재 ${connectionManager.count()}대)")
-            }
-            override fun onDeviceDisconnected(address: String) {
-                DiagLog.log("BLE연결", "기기 연결 끊김 …${address.takeLast(5)} (현재 ${connectionManager.count()}대)")
-            }
+            override fun onDeviceConnected(address: String) {}
+            override fun onDeviceDisconnected(address: String) {}
         }
 
         val peers = BlePeerManager(mainScope) { peerIdHex -> onPeerCameOnline(peerIdHex) }
@@ -117,17 +113,14 @@ object BleMeshManager {
         peerManager = peers
 
         val client = BleGattClientManager(appContext, mainScope, connectionManager, transportDelegate)
-        val clientStarted = client.start()
+        client.start()
         clientManager = client
 
-        var serverStarted = false
         if (mode == BleMode.FULL) {
             val server = BleGattServerManager(appContext, mainScope, connectionManager, transportDelegate, myPeerId)
-            serverStarted = server.start()
+            server.start()
             serverManager = server
         }
-        DiagLog.log("BLE상태", "시작: 모드=$mode, 내 ID=${myPeerIdHex.take(8)}, 검색(스캔)=${if (clientStarted) "시작" else "실패"}"
-                + if (mode == BleMode.FULL) ", 광고(GATT서버)=${if (serverStarted) "시작" else "실패"}" else ", 광고=미지원 모드(Android 7)")
 
         startAnnounceLoop()
         started = true
@@ -138,7 +131,6 @@ object BleMeshManager {
     fun stop() {
         if (!started) return
         started = false
-        DiagLog.log("BLE상태", "중지")
         announceJob?.cancel()
         announceJob = null
         peerManager?.stopCleanup()
@@ -190,18 +182,24 @@ object BleMeshManager {
         val what = describe(type, payload)
         val to = recipientPeerIdHex.take(8)
         if (!started) {
-            DiagLog.log("BLE송신", "⚠ $what → $to 보내지 못함: BLE가 실행 중이 아님")
+            DiagLog.log("BLE송신", "$what → $to 못 보냄: BLE가 실행 중이 아님")
             return
         }
         val recipient = recipientPeerIdHex.hexToByteArray()
         if (recipient == null || recipient.size != BleMeshConstants.PEER_ID_SIZE) {
-            DiagLog.log("BLE송신", "⚠ $what 보내지 못함: 받는 기기 ID 형식 오류($to)")
+            DiagLog.log("BLE송신", "$what 못 보냄: 받는 기기 ID 형식 오류($to)")
             return
         }
         val links = connectionManager.count()
         val online = peerManager?.isOnline(recipientPeerIdHex) == true
-        DiagLog.log("BLE송신", "$what → $to, 연결된 기기 ${links}대, 받는 기기 ${if (online) "근처에서 감지됨" else "감지 안 됨"}"
-                + if (links == 0 && !cacheIfOffline) " ⚠ 연결된 기기가 없어 실제로 나가지 않음" else "")
+        // 실패(가능성) 이벤트만: 연결 0대면 실제로 아무 데도 안 나가고, 상대가 감지 안 되면 닿을 가능성이 낮다.
+        if (cacheIfOffline && !online) {
+            DiagLog.log("BLE송신", "$what → $to 받는 기기가 근처에서 감지되지 않아 보관 (감지되면 재전송, 최대 30분)")
+        } else if (links == 0) {
+            DiagLog.log("BLE송신", "$what → $to 실제로 안 나감: 블루투스로 연결된 기기가 0대")
+        } else if (!online) {
+            DiagLog.log("BLE송신", "$what → $to 보냈지만 받는 기기가 근처에서 감지되지 않음 (연결된 기기 ${links}대를 거쳐 중계 시도)")
+        }
         val packet = BlePacket(
             type = type,
             ttl = BleMeshConstants.DEFAULT_TTL,
@@ -211,7 +209,6 @@ object BleMeshManager {
             payload = payload.toByteArray(Charsets.UTF_8)
         )
         if (cacheIfOffline && !online) {
-            DiagLog.log("BLE송신", "$what → $to 오프라인 — 보관 후 감지되면 재전송")
             storeForward.offer(packet)
         } else {
             mainScope.launch { sendPacket(packet, excludeAddress = null) }
@@ -274,22 +271,16 @@ object BleMeshManager {
         val addressedToMe = effective.isBroadcast || effective.recipientPeerId.contentEquals(myPeerId)
         val payloadText = String(effective.payload, Charsets.UTF_8)
         val what = describe(effective.type, payloadText)
-        if (!addressedToMe) {
-            // 다른 기기 앞으로 온 것 — 중계만 하고 표시 안 함(정상). 수신 측에 "중계만"만 찍히면 보낸 쪽이 엉뚱한 ID로 보낸 것.
-            DiagLog.log("BLE수신", "$what 중계만 함 (보낸 기기 ${senderHex.take(8)} → 받는 기기 ${effective.recipientPeerId.toHex().take(8)}, 내 ID 아님)")
-            return
-        }
+        if (!addressedToMe) return // 다른 기기 앞 — 중계만 하고 표시 안 함(정상)
         val listener = receiveListener
         if (listener == null) {
-            DiagLog.log("BLE수신", "⚠ $what 받았지만 버려짐: 수신 처리기 미등록 (보낸 기기 ${senderHex.take(8)})")
+            DiagLog.log("BLE수신", "$what 받았지만 버려짐: 수신 처리기 미등록 (보낸 기기 ${senderHex.take(8)})")
             return
         }
-        DiagLog.log("BLE수신", "$what 받음 (보낸 기기 ${senderHex.take(8)})")
         listener.onPayloadReceived(payloadText, senderHex)
     }
 
     private fun onPeerCameOnline(peerIdHex: String) {
-        DiagLog.log("BLE연결", "근처 기기 감지: ${peerIdHex.take(8)} (현재 연결 ${connectionManager.count()}대)")
         // BlePeerManager.markSeen()이 이 콜백을 동기 호출하므로, 여기서 직접 suspend
         // sendPacket을 부르는 대신 코루틴으로 넘긴다.
         mainScope.launch {

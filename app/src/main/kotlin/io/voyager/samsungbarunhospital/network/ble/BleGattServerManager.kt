@@ -66,7 +66,7 @@ class BleGattServerManager(
         }
         if (bluetoothAdapter?.isEnabled != true || advertiser == null) {
             Log.e(TAG, "Bluetooth disabled or advertiser unavailable")
-            DiagLog.log("BLE광고", "⚠ 광고 시작 불가: " + if (bluetoothAdapter?.isEnabled != true) "블루투스 꺼짐" else "이 기기는 BLE 광고 기능이 없음 — 다른 기기가 이 기기를 찾을 수 없음")
+            DiagLog.log("BLE노출", "다른 태블릿이 이 태블릿을 찾을 수 있게 하지 못함: " + if (bluetoothAdapter?.isEnabled != true) "블루투스 꺼짐" else "이 기기가 지원하지 않음")
             return false
         }
         isActive = true
@@ -113,7 +113,7 @@ class BleGattServerManager(
                     BluetoothProfile.STATE_CONNECTED -> {
                         if (connectionManager.isFull()) {
                             Log.w(TAG, "Connection cap reached, rejecting ${device.address}")
-                            DiagLog.log("BLE연결", "⚠ 최대 연결 수(${BleMeshConstants.MAX_CONNECTIONS}대) 초과로 …${device.address.takeLast(5)} 연결 거부")
+                            DiagLog.log("BLE연결", "최대 연결 수(${BleMeshConstants.MAX_CONNECTIONS}대) 초과로 …${device.address.takeLast(5)} 연결 거부")
                             try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
                             return
                         }
@@ -216,7 +216,7 @@ class BleGattServerManager(
         if (bluetoothAdapter == null || advertiser == null) return
         if (bluetoothAdapter.isMultipleAdvertisementSupported != true) {
             Log.w(TAG, "Multiple advertisement not supported on this device")
-            DiagLog.log("BLE광고", "⚠ 이 기기 하드웨어가 BLE 광고를 지원하지 않음 — 다른 기기가 이 기기를 먼저 찾을 수 없고, 이 기기가 찾아가 연결할 때만 통신 가능")
+            DiagLog.log("BLE노출", "이 기기가 지원하지 않아 다른 태블릿이 이 태블릿을 먼저 찾을 수 없음 — 이 태블릿이 상대를 찾아가 연결할 때만 통신 가능")
             return
         }
 
@@ -243,13 +243,12 @@ class BleGattServerManager(
                 advertiseRetryCount = 0
                 advertising = true
                 Log.i(TAG, "Advertising started")
-                DiagLog.log("BLE광고", "광고 시작됨 (다른 기기가 이 기기를 찾을 수 있음)")
             }
 
             override fun onStartFailure(errorCode: Int) {
                 Log.e(TAG, "Advertising failed: $errorCode")
                 advertising = false
-                DiagLog.log("BLE광고", "⚠ 광고 실패: 오류코드 $errorCode (${advertiseErrorText(errorCode)})")
+                DiagLog.log("BLE노출", "다른 태블릿이 이 태블릿을 찾을 수 있게 하기 실패: 오류코드 $errorCode (${advertiseErrorText(errorCode)})")
                 if (errorCode != ADVERTISE_FAILED_ALREADY_STARTED &&
                     errorCode != ADVERTISE_FAILED_DATA_TOO_LARGE &&
                     errorCode != ADVERTISE_FAILED_FEATURE_UNSUPPORTED
@@ -277,11 +276,11 @@ class BleGattServerManager(
     }
 
     private fun advertiseErrorText(code: Int): String = when (code) {
-        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "광고 데이터 너무 큼"
-        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "다른 앱이 광고 슬롯을 다 씀, 재시도함"
+        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "알림 데이터가 너무 큼"
+        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "다른 앱이 블루투스 자원을 다 씀, 재시도함"
         AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "이미 시작됨"
         AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "블루투스 내부 오류, 재시도함"
-        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "기기가 광고 미지원"
+        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "기기가 지원하지 않음"
         else -> "알 수 없음"
     }
 

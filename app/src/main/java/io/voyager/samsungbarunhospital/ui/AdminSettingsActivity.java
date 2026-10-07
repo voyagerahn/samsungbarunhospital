@@ -863,7 +863,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvDiagLogStats = findViewById(R.id.tvDiagLogStats);
         findViewById(R.id.btnRunDiag).setOnClickListener(v -> runBleSelfDiagnosis());
         findViewById(R.id.btnRefreshDiagLog).setOnClickListener(v -> refreshDiagLog());
-        findViewById(R.id.btnShareDiagLog).setOnClickListener(v -> shareDiagLog());
+        findViewById(R.id.btnShareDiagLog).setOnClickListener(v -> sendDiagLogToDeveloper());
         findViewById(R.id.btnClearDiagLog).setOnClickListener(v -> confirmClearDiagLog());
     }
 
@@ -891,15 +891,15 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
         Boolean advHw = BleMeshManager.isAdvertisingHardwareSupported(app);
         String adv;
-        if (mode != BleMode.FULL) adv = "해당 없음(모드 제한)";
-        else if (advHw == null) adv = "알 수 없음(블루투스 꺼짐)";
-        else if (!advHw) adv = "불가 — 하드웨어 미지원";
-        else adv = BleMeshManager.isAdvertising() ? "켜짐" : "꺼짐";
-        sb.append("광고(다른 기기가 이 기기를 찾을 수 있음): ").append(adv).append('\n');
+        if (mode != BleMode.FULL) adv = "아니오 (Android 7 기기)";
+        else if (advHw == null) adv = "알 수 없음 (블루투스 꺼짐)";
+        else if (!advHw) adv = "아니오 (이 기기가 지원하지 않음)";
+        else adv = BleMeshManager.isAdvertising() ? "예" : "아니오";
+        sb.append("다른 태블릿이 이 태블릿을 찾을 수 있음: ").append(adv).append('\n');
         if (mode == BleMode.FULL && Boolean.FALSE.equals(advHw)) {
-            warnings.add("이 기기는 하드웨어상 블루투스 광고를 못 합니다 — 상대 태블릿이 먼저 이 기기를 찾을 수 없으니, 상대가 광고 가능한 기기여야 합니다.");
+            warnings.add("이 태블릿은 기기 특성상 다른 태블릿이 먼저 찾아올 수 없습니다 — 이 태블릿이 상대를 찾아가 연결해야 하므로, 상대 태블릿은 '찾을 수 있음: 예'인 기기여야 합니다.");
         } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && !BleMeshManager.isAdvertising()) {
-            warnings.add("광고가 켜져 있지 않습니다 — 통신 기록의 [BLE광고] 오류를 확인하세요.");
+            warnings.add("다른 태블릿이 이 태블릿을 찾을 수 없는 상태입니다 — 블루투스를 껐다 켜보세요.");
         }
 
         sb.append("연결된 기기: ").append(links).append("대\n");
@@ -953,16 +953,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
         lastDiagnosis = result.toString();
         tvDiagResult.setText(lastDiagnosis);
         tvDiagResult.setVisibility(View.VISIBLE);
-        for (String line : lastDiagnosis.split("\n")) {
-            if (!line.trim().isEmpty()) DiagLog.log("자가진단", line);
-        }
         refreshDiagLog();
     }
 
     private void refreshDiagLog() {
         DiagLog.stats(stats -> runOnUiThread(() -> tvDiagLogStats.setText(stats)));
         DiagLog.readAll(text -> {
-            // 최신 기록이 위로 오도록 뒤집고, 화면에는 최근 일부만 (전체는 "기록 공유"로)
+            // 최신 이벤트가 위로 오도록 뒤집고, 화면에는 최근 일부만 (전체는 "기록 공유"로)
             String[] lines = text.split("\n");
             StringBuilder sb = new StringBuilder();
             int shown = 0;
@@ -971,16 +968,33 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 sb.append(lines[i]).append('\n');
                 shown++;
             }
-            String display = shown == 0 ? "기록 없음" : sb.toString();
+            String display = shown == 0 ? "기록된 실패 이벤트 없음" : sb.toString();
             runOnUiThread(() -> tvDiagLog.setText(display));
         });
     }
 
+    /** 진단 기록을 받을 개발자 메일 주소. */
+    private static final String DEVELOPER_EMAIL = "voyagerahn@gmail.com";
+
     /**
-     * 기기 정보 + 마지막 자가진단 + 전체 기록을 파일 하나로 묶어 공유한다. 텍스트(EXTRA_TEXT)로 넘기면
-     * 기록이 클 때 Intent 크기 한도(~1MB)를 넘어 앱이 죽을 수 있어서 파일(FileProvider)로 보낸다.
+     * 기기 정보 + 마지막 자가진단 + 실패 이벤트 전체를 파일 하나로 묶어 개발자 메일로 보낸다.
+     * 인터넷이 안 되면 그 자리에서 안내하고 취소한다(병원 내부망은 인터넷이 막혀 있을 수 있음).
+     *
+     * 메일은 태블릿의 메일 앱(Gmail 등)을 받는 사람·제목·첨부가 채워진 상태로 열고, 직원이 "보내기"만
+     * 누르게 한다 — 앱이 직접(SMTP) 보내려면 메일 계정 비밀번호를 APK에 넣어야 해서(APK를 풀면 누구나
+     * 볼 수 있음) 택하지 않았다. 파일은 Intent 크기 한도(~1MB)를 피하려고 FileProvider로 첨부한다.
      */
-    private void shareDiagLog() {
+    private void sendDiagLogToDeveloper() {
+        if (!hasInternet()) {
+            showCannotSendDialog("인터넷에 연결되어 있지 않아 기록을 보낼 수 없습니다.\n인터넷이 되는 Wi-Fi에 연결한 뒤 다시 시도해주세요.");
+            return;
+        }
+        Intent mailto = new Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"));
+        if (getPackageManager().queryIntentActivities(mailto, 0).isEmpty()) {
+            // 이 확인 없이 열면 시스템이 영어로 "No apps can perform this action"만 띄운다.
+            showCannotSendDialog("이 태블릿에 메일 앱(Gmail 등)이 없어 기록을 보낼 수 없습니다.");
+            return;
+        }
         Toast.makeText(this, "기록 파일을 만드는 중...", Toast.LENGTH_SHORT).show();
         String header = buildDiagShareHeader();
         DiagLog.readAll(text -> {
@@ -993,26 +1007,51 @@ public class AdminSettingsActivity extends AppCompatActivity {
                         "diag_" + AppSettings.getOrCreateBlePeerId(this).substring(0, 8) + "_" + stamp + ".txt");
                 try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
                     os.write(header.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                    os.write((text.isEmpty() ? "(기록 없음)\n" : text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    os.write((text.isEmpty() ? "(기록된 실패 이벤트 없음)\n" : text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 }
                 android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
                         this, getPackageName() + ".diagfileprovider", out);
-                Intent send = new Intent(Intent.ACTION_SEND);
-                send.setType("text/plain");
-                send.putExtra(Intent.EXTRA_STREAM, uri);
-                send.putExtra(Intent.EXTRA_SUBJECT, "[호출앱 진단] " + AppSettings.getTabletName(this));
-                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                Intent mail = new Intent(Intent.ACTION_SEND);
+                mail.setType("text/plain");
+                mail.putExtra(Intent.EXTRA_EMAIL, new String[]{DEVELOPER_EMAIL});
+                mail.putExtra(Intent.EXTRA_SUBJECT, "[호출앱 진단] " + AppSettings.getTabletName(this));
+                mail.putExtra(Intent.EXTRA_TEXT, "첨부된 진단 기록을 확인해주세요.\n\n"
+                        + (lastDiagnosis != null ? lastDiagnosis : ""));
+                mail.putExtra(Intent.EXTRA_STREAM, uri);
+                mail.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                // 메일 앱만 고르도록 — 메신저 등 다른 공유 대상은 받는 사람이 안 채워지므로 제외
+                mail.setSelector(mailto);
+
                 runOnUiThread(() -> {
                     try {
-                        startActivity(Intent.createChooser(send, "진단 기록 보내기"));
+                        startActivity(Intent.createChooser(mail, "메일 앱 선택 후 '보내기'를 눌러주세요"));
                     } catch (Exception e) {
-                        Toast.makeText(this, "공유할 수 있는 앱이 없습니다.", Toast.LENGTH_LONG).show();
+                        showCannotSendDialog("메일 앱을 열지 못했습니다. 메일 계정이 등록되어 있는지 확인해주세요.");
                     }
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(this, "기록 파일을 만들지 못했습니다: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
+    }
+
+    private void showCannotSendDialog(String message) {
+        new AlertDialog.Builder(this)
+                .setTitle("보낼 수 없음")
+                .setMessage(message)
+                .setPositiveButton("확인", null)
+                .show();
+    }
+
+    /** 실제 인터넷 접속이 확인된 네트워크인지(VALIDATED) — Wi-Fi에 붙어만 있고 인터넷은 막힌 병원 내부망은 false. */
+    private boolean hasInternet() {
+        android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        return caps != null
+                && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
 
     private String buildDiagShareHeader() {
@@ -1031,19 +1070,19 @@ public class AdminSettingsActivity extends AppCompatActivity {
         sb.append("내 BLE ID: ").append(AppSettings.getOrCreateBlePeerId(this)).append('\n');
         sb.append("Wi-Fi IP: ").append(getLocalIpAddress()).append("\n\n");
         sb.append("=== 마지막 자가진단 ===\n").append(lastDiagnosis != null ? lastDiagnosis : "(이번에 실행 안 함)\n").append('\n');
-        sb.append("=== 통신 기록 (오래된 순) ===\n");
+        sb.append("=== 블루투스 통신 실패 이벤트 (오래된 순) ===\n");
         return sb.toString();
     }
 
     private void confirmClearDiagLog() {
         new AlertDialog.Builder(this)
                 .setTitle("기록 전체 삭제")
-                .setMessage("저장된 블루투스 통신 기록을 모두 삭제할까요?\n삭제한 기록은 되돌릴 수 없습니다.")
-                .setPositiveButton("삭제", (d, w) -> DiagLog.clear(remaining -> {
+                .setMessage("저장된 블루투스 통신 실패 기록을 모두 삭제할까요?\n삭제한 기록은 되돌릴 수 없습니다.")
+                .setPositiveButton("삭제", (d, w) -> DiagLog.clear(deleted -> {
                     deleteDiagShareFiles(new java.io.File(getCacheDir(), DIAG_SHARE_DIR));
                     runOnUiThread(() -> {
-                        Toast.makeText(this, remaining == 0 ? "✓ 기록을 모두 삭제했습니다."
-                                : "⚠ 기록 파일 " + remaining + "개를 삭제하지 못했습니다.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, deleted ? "✓ 기록을 모두 삭제했습니다."
+                                : "⚠ 기록 파일을 삭제하지 못했습니다. 다시 시도해주세요.", Toast.LENGTH_LONG).show();
                         refreshDiagLog();
                     });
                 }))

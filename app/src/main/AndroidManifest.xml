@@ -33,6 +33,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- 진단 탭 "개발자에게 보내기": 메일 앱이 있는지 미리 확인 (없으면 한국어 안내) -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
     </queries>
 
     <application

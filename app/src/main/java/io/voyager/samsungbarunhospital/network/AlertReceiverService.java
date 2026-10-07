@@ -117,15 +117,9 @@ public class AlertReceiverService extends Service {
     public static void handleIncomingFromBle(String payload, String fromPeerId) {
         IncomingCallHandler.Result result = IncomingCallHandler.parseAndApply(payload, null, fromPeerId);
         if (instance == null) {
-            DiagLog.log("BLE수신", "⚠ 호출 수신 서비스가 꺼져 있어 알람을 띄우지 못함 (" + result.kind + ")");
-        } else if (result.kind == IncomingCallHandler.Kind.NEW_CALL) {
-            DiagLog.log("BLE수신", "새 호출 → 호출 목록 추가, 알람 화면 표시");
-        } else if (result.kind == IncomingCallHandler.Kind.IGNORED) {
-            DiagLog.log("BLE수신", "이미 받은 호출(Wi-Fi로 먼저 도착 등)이거나 형식 오류 → 무시");
-        } else if (result.kind == IncomingCallHandler.Kind.CONFIRMED) {
-            DiagLog.log("BLE수신", confirmListener != null
-                    ? "확인응답 → 환자 화면 '호출 완료' 표시"
-                    : "⚠ 확인응답 받았으나 환자 메인 화면이 열려 있지 않아 표시 못함");
+            DiagLog.log("BLE수신", "블루투스로 받았지만 호출 수신 서비스가 꺼져 있어 처리 못함 (" + result.kind + ")");
+        } else if (result.kind == IncomingCallHandler.Kind.CONFIRMED && confirmListener == null) {
+            DiagLog.log("BLE수신", "간호사 확인응답을 받았지만 환자 메인 화면이 열려 있지 않아 '호출 완료'를 표시 못함");
         }
         react(result);
     }

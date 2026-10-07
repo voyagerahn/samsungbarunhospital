@@ -12,104 +12,127 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 
 import java.io.File;
-import java.io.RandomAccessFile;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 진단 기록의 보관 정책(기간·용량 상한·전체 삭제)이 확실히 지켜지는지 실제 파일로 검증한다.
- * DiagLog는 프로세스 전역 상태라 테스트마다 전체 삭제로 시작한다.
+ * 통신 실패 이벤트 기록의 보관 정책(30일 경과 이벤트 삭제·재시작 없이 날짜가 바뀔 때 정리·전체 삭제)이
+ * 확실히 지켜지는지 실제 파일로 검증한다. DiagLog는 프로세스 전역 상태라 테스트마다 전체 삭제로 시작한다.
  */
 @RunWith(RobolectricTestRunner.class)
 public class DiagLogTest {
 
-    private File dir;
+    private File file;
 
     @Before
     public void setUp() throws Exception {
         DiagLog.init(ApplicationProvider.getApplicationContext());
         clearAndAwait();
-        dir = DiagLog.directoryForTest();
-        dir.mkdirs();
+        file = DiagLog.fileForTest();
     }
 
     @Test
-    public void prune_deletesFilesOlderThanRetention_keepsRecentOnes() throws Exception {
-        File expired = createDayFile(DiagLog.RETENTION_DAYS + 5, 100);
-        File recent  = createDayFile(DiagLog.RETENTION_DAYS - 1, 100);
-        File today   = createDayFile(0, 100);
+    public void noEvents_noFileIsCreated() throws Exception {
+        DiagLog.prune();
+        assertFalse(file.exists());
+        assertEquals("", readAllAndAwait());
+    }
+
+    @Test
+    public void prune_removesOnlyEventsOlderThanRetention() throws Exception {
+        writeLines(
+                eventDaysAgo(DiagLog.RETENTION_DAYS + 5, "오래된 이벤트"),
+                eventDaysAgo(DiagLog.RETENTION_DAYS - 1, "보관 기간 안 이벤트"),
+                eventDaysAgo(0, "오늘 이벤트"));
 
         DiagLog.prune();
-
-        assertFalse(expired.exists());
-        assertTrue(recent.exists());
-        assertTrue(today.exists());
-    }
-
-    @Test
-    public void firstWriteOfTheDay_appliesRetention_withoutAppRestart() throws Exception {
-        // 홈 런처라 재시작 없이 몇 주씩 돌 수 있음 — 날짜가 바뀌어 처음 기록할 때도 정리돼야 한다.
-        File expired = createDayFile(DiagLog.RETENTION_DAYS + 1, 100);
-
-        DiagLog.log("테스트", "오늘 첫 기록");
         String all = readAllAndAwait();
 
-        assertFalse(expired.exists());
-        assertTrue(all.contains("[테스트] 오늘 첫 기록"));
+        assertFalse(all.contains("오래된 이벤트"));
+        assertTrue(all.contains("보관 기간 안 이벤트"));
+        assertTrue(all.contains("오늘 이벤트"));
     }
 
     @Test
-    public void prune_overTotalSizeCap_deletesOldestFirst_butKeepsToday() throws Exception {
-        long chunk = DiagLog.MAX_TOTAL_BYTES / 2;
-        File oldest = createDayFile(3, chunk);
-        File middle = createDayFile(2, chunk);
-        File today  = createDayFile(0, chunk);
-
+    public void prune_allExpired_deletesFile() throws Exception {
+        writeLines(eventDaysAgo(DiagLog.RETENTION_DAYS + 1, "만료"));
         DiagLog.prune();
-
-        assertFalse(oldest.exists());
-        assertTrue(middle.exists());
-        assertTrue(today.exists());
+        assertFalse(file.exists());
     }
 
     @Test
-    public void clear_removesEverything_andReportsZeroRemaining() throws Exception {
-        createDayFile(10, 100);
-        createDayFile(0, 100);
-        DiagLog.log("테스트", "삭제될 기록");
+    public void firstEventOfANewDay_appliesRetention_withoutAppRestart() throws Exception {
+        // 홈 런처라 재시작 없이 몇 주씩 돌 수 있음 — 날짜가 바뀐 뒤 첫 이벤트를 기록할 때도 정리돼야 한다.
+        writeLines(eventDaysAgo(DiagLog.RETENTION_DAYS + 1, "만료된 이벤트"));
+        DiagLog.simulateDayChangeForTest();
 
-        int remaining = clearAndAwait();
+        DiagLog.log("테스트", "새 이벤트");
+        String raw = rawFileAfterWrites();
 
-        assertEquals(0, remaining);
-        File[] left = dir.listFiles((d, name) -> name.endsWith(".log"));
-        assertEquals(0, left == null ? 0 : left.length);
+        assertFalse(raw.contains("만료된 이벤트"));
+        assertTrue(raw.contains("[테스트] 새 이벤트"));
+    }
+
+    @Test
+    public void readAll_neverReturnsExpiredEvents_evenWithoutNewEvents() throws Exception {
+        // 이벤트가 한동안 없어 기록 시점 정리가 안 일어났어도, 화면 표시·전송 때는 기간 지난 이벤트가 빠져야 한다.
+        writeLines(eventDaysAgo(DiagLog.RETENTION_DAYS + 3, "만료된 이벤트"), eventDaysAgo(1, "어제 이벤트"));
+
+        String all = readAllAndAwait();
+
+        assertFalse(all.contains("만료된 이벤트"));
+        assertTrue(all.contains("어제 이벤트"));
+    }
+
+    @Test
+    public void clear_deletesFile_andReportsSuccess() throws Exception {
+        DiagLog.log("테스트", "삭제될 이벤트");
+        readAllAndAwait();
+        assertTrue(file.exists());
+
+        assertTrue(clearAndAwait());
+        assertFalse(file.exists());
         assertEquals("", readAllAndAwait());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private File createDayFile(int daysAgo, long sizeBytes) throws Exception {
+    private static String eventDaysAgo(int daysAgo, String message) {
         Calendar cal = Calendar.getInstance();
         cal.add(Calendar.DAY_OF_YEAR, -daysAgo);
-        String day = new SimpleDateFormat("yyyyMMdd", Locale.US).format(cal.getTime());
-        File f = new File(dir, "diag_" + day + ".log");
-        try (RandomAccessFile raf = new RandomAccessFile(f, "rw")) {
-            raf.setLength(sizeBytes);
-        }
-        return f;
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(cal.getTime()) + " [테스트] " + message;
     }
 
-    private static int clearAndAwait() throws Exception {
+    private void writeLines(String... lines) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (String l : lines) sb.append(l).append('\n');
+        try (FileOutputStream out = new FileOutputStream(file, false)) {
+            out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /** 기록 스레드의 대기 작업이 끝난 뒤 파일 원본을 그대로 읽는다(readAll의 정리를 거치지 않음). */
+    private String rawFileAfterWrites() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
-        AtomicInteger remaining = new AtomicInteger(-1);
-        DiagLog.clear(r -> { remaining.set(r); latch.countDown(); });
+        DiagLog.runOnWriterForTest(latch::countDown);
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        return remaining.get();
+        if (!file.exists()) return "";
+        return new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static boolean clearAndAwait() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean deleted = new AtomicBoolean(false);
+        DiagLog.clear(d -> { deleted.set(d); latch.countDown(); });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        return deleted.get();
     }
 
     private static String readAllAndAwait() throws Exception {

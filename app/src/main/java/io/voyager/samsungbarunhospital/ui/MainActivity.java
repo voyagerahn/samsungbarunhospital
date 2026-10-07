@@ -353,9 +353,9 @@ public class MainActivity extends AppCompatActivity {
         // BLE 전용 간호사는 TCP 경로가 아예 없으므로(한 번도 같은 네트워크였던 적 없음),
         // TCP 성공/실패와 무관하게 항상 시도한다.
         int bleOnlySent = sendBleToBleOnlyNurses(bleOnlyNurses, payload, /*isCancel=*/false);
-        if (!bleOnlyNurses.isEmpty()) {
+        if (!bleOnlyNurses.isEmpty() && bleOnlySent == 0) {
             DiagLog.log("BLE송신", "호출 #" + callId.substring(0, 8) + ": BLE 전용 간호사 " + bleOnlyNurses.size()
-                    + "명 → " + (bleOnlySent > 0 ? "블루투스 전송" : "⚠ 전송 못함" + bleNotSendableReason()));
+                    + "명에게 못 보냄" + bleNotSendableReason());
         }
 
         if (targets.isEmpty()) {
@@ -403,22 +403,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 블루투스 디버깅에 필요한 Wi-Fi 쪽 기록은 이 한 줄뿐 — IP로 등록된 간호사는 Wi-Fi가 실패해야
-     * 블루투스로 넘어가므로, 이게 없으면 블루투스 기록이 비어 있을 때 "블루투스 고장"인지
-     * "Wi-Fi가 성공해서 안 쓴 것"인지 구분할 수 없다.
+     * Wi-Fi가 전부 실패했는데 블루투스로도 아무에게 못 보낸 경우만 기록한다(실패 이벤트). 블루투스로
+     * 보내긴 했지만 그 순간 연결 0대/상대 미감지였던 경우는 BleMeshManager가 따로 기록한다.
      */
     private void logWifiFallback(String what, List<String> nurseIps, int bleSent) {
+        if (bleSent > 0) return;
         int linked = 0;
         for (String ip : nurseIps) if (AppSettings.getNursePeerId(this, ip) != null) linked++;
-        String detail;
-        if (bleSent > 0) {
-            detail = "블루투스로 " + bleSent + "대에 전송";
-        } else if (linked == 0) {
-            detail = "⚠ 블루투스 연결된 간호사가 없어 아무 데도 못 보냄 (관리자 설정에서 '블루투스 연결' 필요)";
-        } else {
-            detail = "⚠ 블루투스 전송 못함" + bleNotSendableReason();
-        }
-        DiagLog.log("BLE송신", what + ": Wi-Fi 실패(IP " + nurseIps.size() + "개, 그중 블루투스 연결 " + linked + "개) → " + detail);
+        String reason = linked == 0
+                ? "블루투스 연결된 간호사가 없음 (관리자 설정 → 통신 설정에서 '블루투스 연결' 필요)"
+                : "블루투스 전송 불가" + bleNotSendableReason();
+        DiagLog.log("BLE송신", what + ": Wi-Fi 실패(IP " + nurseIps.size() + "개) 후 블루투스로도 못 보냄 — " + reason);
     }
 
     private String bleNotSendableReason() {

@@ -64,7 +64,7 @@ class BleGattClientManager(
         }
         if (bluetoothAdapter?.isEnabled != true || scanner == null) {
             Log.e(TAG, "Bluetooth disabled or scanner unavailable")
-            DiagLog.log("BLE검색", "⚠ 검색 시작 불가: " + if (bluetoothAdapter?.isEnabled != true) "블루투스 꺼짐" else "스캐너 없음")
+            DiagLog.log("BLE검색", "검색 시작 불가: " + if (bluetoothAdapter?.isEnabled != true) "블루투스 꺼짐" else "스캐너 없음")
             return false
         }
         isActive = true
@@ -100,7 +100,7 @@ class BleGattClientManager(
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "Scan failed: $errorCode")
-                DiagLog.log("BLE검색", "⚠ 주변 기기 검색 실패: 오류코드 $errorCode, 잠시 후 재시도")
+                DiagLog.log("BLE검색", "주변 기기 검색 실패: 오류코드 $errorCode, 잠시 후 재시도")
                 isScanning = false
                 scheduleScanRestart()
             }
@@ -112,7 +112,7 @@ class BleGattClientManager(
             scanRetryCount = 0
         } catch (e: Exception) {
             Log.e(TAG, "Exception starting scan: ${e.message}")
-            DiagLog.log("BLE검색", "⚠ 검색 시작 중 오류: ${e.message}")
+            DiagLog.log("BLE검색", "검색 시작 중 오류: ${e.message}")
             isScanning = false
         }
     }
@@ -182,14 +182,14 @@ class BleGattClientManager(
                     }
                 } else {
                     Log.w(TAG, "MTU negotiation failed for ${device.address}")
-                DiagLog.log("BLE연결", "⚠ …${device.address.takeLast(5)} 연결 설정(MTU) 실패, 연결 해제")
+                DiagLog.log("BLE연결", "…${device.address.takeLast(5)} 연결 설정(MTU) 실패, 연결 해제")
                     gatt.disconnect()
                 }
             }
 
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    DiagLog.log("BLE연결", "⚠ …${device.address.takeLast(5)} 서비스 탐색 실패(status=$status), 연결 해제")
+                    DiagLog.log("BLE연결", "…${device.address.takeLast(5)} 서비스 탐색 실패(status=$status), 연결 해제")
                     gatt.disconnect()
                     return
                 }
@@ -197,7 +197,7 @@ class BleGattClientManager(
                     ?.getCharacteristic(BleMeshConstants.CHARACTERISTIC_UUID)
                 if (characteristic == null) {
                     Log.e(TAG, "Required characteristic not found for ${device.address}")
-                    DiagLog.log("BLE연결", "⚠ …${device.address.takeLast(5)} 통신 채널 없음(구버전 앱?), 연결 해제")
+                    DiagLog.log("BLE연결", "…${device.address.takeLast(5)} 통신 채널 없음(구버전 앱?), 연결 해제")
                     gatt.disconnect()
                     return
                 }
@@ -243,7 +243,7 @@ class BleGattClientManager(
         } catch (e: Exception) {
             pendingConnections.remove(device.address)
             Log.e(TAG, "Exception connecting to ${device.address}: ${e.message}")
-            DiagLog.log("BLE연결", "⚠ …${device.address.takeLast(5)} 연결 시도 오류: ${e.message}")
+            DiagLog.log("BLE연결", "…${device.address.takeLast(5)} 연결 시도 오류: ${e.message}")
         }
     }
 }

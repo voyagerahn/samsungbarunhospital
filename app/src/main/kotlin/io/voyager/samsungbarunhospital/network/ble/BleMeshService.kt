@@ -43,12 +43,11 @@ class BleMeshService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                 BluetoothAdapter.STATE_ON -> {
-                    DiagLog.log("BLE상태", "블루투스 켜짐 → BLE 재시작")
                     BleMeshManager.stop()
                     startMesh()
                 }
                 BluetoothAdapter.STATE_TURNING_OFF -> {
-                    DiagLog.log("BLE상태", "⚠ 블루투스 꺼짐 → BLE 중지 (블루투스로 호출 주고받기 불가)")
+                    DiagLog.log("BLE상태", "블루투스가 꺼짐 — 켜질 때까지 블루투스로 호출을 주고받을 수 없음")
                     BleMeshManager.stop()
                 }
                 BluetoothAdapter.STATE_OFF -> BleMeshManager.stop()
@@ -64,7 +63,6 @@ class BleMeshService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        if (intent == null) DiagLog.log("BLE상태", "시스템이 BLE 서비스를 재시작함")
         startMesh()
         return START_STICKY
     }

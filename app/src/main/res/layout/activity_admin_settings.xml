@@ -962,7 +962,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:lineSpacingExtra="4dp"
-                            android:text="1. 문제가 생긴 호출을 한 번 더 해봅니다\n2. 환자 태블릿과 간호사 태블릿 각각에서 이 화면의 &quot;자가진단 실행&quot;을 누릅니다\n3. 각 태블릿에서 &quot;기록 공유&quot;를 눌러 개발자에게 보냅니다 (두 태블릿 모두)"
+                            android:text="1. 문제가 생긴 호출을 한 번 더 해봅니다\n2. 환자 태블릿과 간호사 태블릿 각각에서 이 화면의 &quot;자가진단 실행&quot;을 누릅니다\n3. 각 태블릿에서 &quot;개발자에게 보내기&quot;를 누르고, 열린 메일 앱에서 &quot;보내기&quot;를 누릅니다 (두 태블릿 모두, 인터넷 연결 필요)"
                             android:textColor="@color/text_hint"
                             android:textSize="14sp" />
 
@@ -990,7 +990,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="12dp"
-                            android:text="지금 이 태블릿의 블루투스 통신 상태를 점검합니다. 결과는 통신 기록에도 함께 저장됩니다"
+                            android:text="지금 이 태블릿의 블루투스 통신 상태를 점검합니다. 결과는 &quot;개발자에게 보내기&quot; 때 함께 전송됩니다"
                             android:textColor="@color/text_muted"
                             android:textSize="13sp" />
 
@@ -1029,7 +1029,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="4dp"
-                            android:text="블루투스 통신 기록"
+                            android:text="블루투스 통신 실패 기록"
                             android:textColor="@color/text_accent_blue"
                             android:textSize="16sp"
                             android:textStyle="bold" />
@@ -1054,7 +1054,7 @@
                                 android:layout_marginEnd="8dp"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_button_success"
-                                android:text="기록 공유"
+                                android:text="개발자에게 보내기"
                                 android:textColor="@color/text_primary"
                                 android:textSize="15sp" />
 
