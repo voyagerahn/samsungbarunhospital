@@ -182,6 +182,20 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
 - 다른 기기에서 받아 저장한 peerId는 길이 미보장 → 화면 표시에 `substring(0, 8)` 대신 `shortId()`.
 - 남은 lint Error(의도적으로 유지): `MissingPermission`(BleConnectionManager — 시작 시 권한 확인 + try/catch), `CoarseFineLocation`(FINE은 maxSdk 30이라 API 31+에선 요청 안 함 — 오탐), `NotificationPermission`(Android 13에서 POST_NOTIFICATIONS 미요청 → 상단 알림 배지만 안 보임. 호출 알람 화면·소리는 Activity로 뜨므로 무관. 기존부터 그랬음).
 
+### v2.2.0 배포 파일 만들기 (2026-10-10)
+
+- 파일: `release/삼성바른병원_환자호출_v2.2.0_20261010.apk` — **파일명 규칙: `삼성바른병원_환자호출_v<버전>_<배포일 yyyyMMdd>.apk`** (v2.2.0부터 날짜 추가, 사용자 요청).
+- v2.1.2까지 `release/`의 APK는 사실 **디버그 빌드**(debuggable)였음. v2.2.0부터는 `assembleRelease`(non-debuggable)로 만든 뒤 **같은 디버그 키스토어로 직접 서명** — 서명 인증서가 같아서(SHA-256 `dce08dcb…6d1f`) 기존 설치본 위에 덮어 설치 가능:
+  ```
+  ./gradlew :app:assembleRelease
+  BT=$HOME/Library/Android/sdk/build-tools/37.0.0
+  $BT/zipalign -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
+  $BT/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out release/<파일명>.apk /tmp/aligned.apk
+  ```
+  (`.idsig` 부산물은 불필요해서 삭제.) 에뮬레이터에서 v2.1.2 설치 → 설정 저장 → v2.2.0 덮어 설치 → 설정 유지 확인함. 전용 release 키스토어 전환은 여전히 "다음에 할 일" 참고 — 전환하면 그때는 전체 재설치 필요.
+- `assembleRelease` 중 출력되는 `e: ... incompatible version of Kotlin ... expected version is 1.7.1`은 lint(lintVital)의 내장 Kotlin 분석기 버전 문제로 나오는 메시지이고 빌드는 성공함(무시 가능).
+- 사용자 매뉴얼 `docs/manual.md`는 md-to-pdf frontmatter 형식이지만 이 환경에 Node가 없어, `manual.pdf`는 Python `markdown`으로 HTML 변환(frontmatter의 stylesheet·margin을 그대로 적용) 후 Chrome headless `--print-to-pdf`로 생성함.
+
 ### 다음에 이어서 할 일
 - **실제 배포 전 필수**: 전용 release 키스토어 생성 + `app/build.gradle`에 release `signingConfig` 추가(위 "배포용 APK 서명" 참고).
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.
