@@ -222,6 +222,17 @@ public class AdminSettingsActivity extends AppCompatActivity {
         refreshBleStatus();
     }
 
+    // 검색 다이얼로그가 열린 채 화면이 종료되면 dismiss 리스너가 안 불려, 1.5초 주기 갱신과 Wi-Fi
+    // 검색(NSD)이 계속 돌면서 이 Activity를 붙잡는다(메모리 누수). 종료 시 직접 정리한다.
+    private final List<Runnable> onDestroyCleanups = new ArrayList<>();
+
+    @Override
+    protected void onDestroy() {
+        for (Runnable r : onDestroyCleanups) r.run();
+        onDestroyCleanups.clear();
+        super.onDestroy();
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -500,6 +511,12 @@ public class AdminSettingsActivity extends AppCompatActivity {
         return btn;
     }
 
+    /** 다른 기기에서 받아 저장한 ID는 길이가 보장되지 않으므로 substring(0, 8) 대신 이걸 쓴다. */
+    private static String shortId(String id) {
+        if (id == null) return "?";
+        return id.length() > 8 ? id.substring(0, 8) : id;
+    }
+
     private static String formatAgo(long epochMs) {
         long minutes = (System.currentTimeMillis() - epochMs) / 60000L;
         if (minutes <= 0) return "방금 전";
@@ -513,7 +530,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         List<BleOnlyNurse> nurses = AppSettings.getBleOnlyNurses(this);
 
         for (BleOnlyNurse nurse : nurses) {
-            String label = nurse.label != null ? nurse.label : ("기기 " + nurse.peerId.substring(0, 8));
+            String label = nurse.label != null ? nurse.label : ("기기 " + shortId(nurse.peerId));
             bleOnlyNurseListContainer.addView(buildDeletableRow(label, () -> {
                 AppSettings.removeBleOnlyNurse(this, nurse.peerId);
                 populateBleOnlyNurseList();
@@ -639,6 +656,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
             handler.postDelayed(refreshRef[0], 1500);
         };
         dialog.setOnDismissListener(d -> handler.removeCallbacksAndMessages(null));
+        onDestroyCleanups.add(() -> {
+            handler.removeCallbacksAndMessages(null);
+            dialog.dismiss();
+        });
         dialog.show();
         refreshRef[0].run();
     }
@@ -691,6 +712,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
             if (dialog.isShowing()) render.run();
         });
         dialog.setOnDismissListener(d -> discovery.stop());
+        onDestroyCleanups.add(() -> {
+            discovery.stop();
+            dialog.dismiss();
+        });
         dialog.show();
         render.run();
         discovery.start();
@@ -927,16 +952,16 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 warnings.add(ip + " 간호사는 블루투스 연결이 안 되어 있어 Wi-Fi가 안 될 때 호출이 가지 않습니다 — 통신 설정에서 '블루투스 연결'을 하세요.");
             } else {
                 boolean online = BleMeshManager.isPeerOnline(peerId);
-                sb.append(peerId.substring(0, 8)).append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
-                if (!online && running) warnings.add(ip + " 간호사 태블릿(" + peerId.substring(0, 8) + ")이 근처에서 감지되지 않습니다.");
+                sb.append(shortId(peerId)).append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
+                if (!online && running) warnings.add(ip + " 간호사 태블릿(" + shortId(peerId) + ")이 근처에서 감지되지 않습니다.");
             }
         }
         for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
             targets++;
             boolean online = BleMeshManager.isPeerOnline(n.peerId);
-            sb.append("\n  · BLE 전용 ").append(n.label != null ? n.label : "").append(" (").append(n.peerId.substring(0, 8)).append(')')
+            sb.append("\n  · BLE 전용 ").append(n.label != null ? n.label : "").append(" (").append(shortId(n.peerId)).append(')')
               .append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
-            if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : n.peerId.substring(0, 8)) + "이(가) 근처에서 감지되지 않습니다.");
+            if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : shortId(n.peerId)) + "이(가) 근처에서 감지되지 않습니다.");
         }
         if (targets == 0) sb.append(" 없음 (간호사 태블릿이면 정상)");
 

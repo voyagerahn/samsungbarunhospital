@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import io.voyager.samsungbarunhospital.data.AppSettings
 import io.voyager.samsungbarunhospital.data.DiagLog
 import io.voyager.samsungbarunhospital.network.AlertReceiverService
@@ -28,9 +29,14 @@ class BleMeshService : Service() {
         private const val NOTIFICATION_ID = 3
         private const val SERVICE_CHANNEL_ID = "service_channel"
 
+        /**
+         * Context.startForegroundService()는 API 26+ 전용 — Android 7(API 24/25)에서 직접 부르면
+         * NoSuchMethodError로 앱이 죽는다(MainActivity.onCreate에서 불리므로 홈 런처가 실행 즉시
+         * 반복 크래시). ContextCompat이 API 26 미만에서는 startService()로 대신 처리한다.
+         */
         @JvmStatic
         fun start(context: Context) {
-            context.startForegroundService(Intent(context, BleMeshService::class.java))
+            ContextCompat.startForegroundService(context, Intent(context, BleMeshService::class.java))
         }
     }
 

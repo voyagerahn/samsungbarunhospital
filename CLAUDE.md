@@ -174,6 +174,14 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
 - **개발자에게 보내기**: 인터넷(VALIDATED) 없으면 "인터넷에 연결되어 있지 않아…" 안내 후 취소. 메일 앱 없으면 한국어 안내 후 취소(`<queries>`에 mailto SENDTO 추가 — Android 11+ 패키지 가시성). 있으면 메일 앱을 받는 사람 voyagerahn@gmail.com·제목·본문(자가진단 요약)·첨부(헤더+자가진단+이벤트 전체, FileProvider `${applicationId}.diagfileprovider`)가 채워진 상태로 열고 직원이 "보내기"만 누름. **앱이 직접(SMTP) 자동 전송하지 않는 이유**: 메일 계정 비밀번호를 APK에 넣어야 해서(APK를 풀면 누구나 봄). 완전 자동 전송이 필요해지면 별도 서버/메일 API가 필요.
 - 에뮬레이터(API 26)에서 확인: 자가진단 표시, 실패 이벤트만 기록됨(블루투스 꺼짐 1건), 메일 앱 없음 → 한국어 안내, 비행기 모드(오프라인) → 인터넷 없음 안내, 전체 삭제 후 파일 사라짐. **Gmail이 있는 실기기에서 메일 작성 화면이 첨부와 함께 열리는지는 미확인**(에뮬레이터에 메일 앱 없음). 에뮬레이터에서 `svc wifi disable`은 실제로 네트워크를 안 끊음 — 오프라인 테스트는 `adb root` 후 airplane mode 브로드캐스트 필요.
 
+### 배포 전 안정성 점검 (2026-10-10, v2.2.0)
+
+- **Android 7 실행 즉시 크래시 (기존 버그, 수정)**: `BleMeshService.start()`가 API 26+ 전용인 `Context.startForegroundService()`를 직접 호출 → Android 7(API 24/25)에서 BLE 권한이 있으면 `MainActivity.onCreate`에서 `NoSuchMethodError`로 홈 런처가 반복 크래시. `feature/ble-mesh` 병합 때부터 있던 것으로, lint `NewApi`가 잡음. `ContextCompat.startForegroundService()`로 교체. API 24/25 에뮬레이터 이미지가 이 환경에 없어 실행 확인은 못 함(lint 재검사로 해소 확인). **앞으로 `./gradlew lintDebug`의 Error는 배포 전 반드시 확인할 것.**
+- GATT 클라이언트 핸들 누수: 블루투스가 꺼질 때는 STATE_DISCONNECTED 콜백(평소 `close()` 지점)이 안 올 수 있어 핸들이 쌓임(프로세스당 슬롯 제한) → `BleGattClientManager`가 연 핸들을 전부 추적(`openGatts`)해 `stop()`에서 직접 close. "연결됨+오류 status" 콜백도 끊김으로 처리(전엔 핸들이 영구히 열린 채 그 기기로 재연결 안 함). 클라이언트 끊김 시 같은 주소의 서버 연결 항목은 지우지 않음(서버 쪽 가드와 대칭).
+- 관리자 화면 검색 다이얼로그가 열린 채 화면이 종료되면 1.5초 갱신 루프/NSD 검색이 Activity를 붙잡던 누수 → `onDestroy`에서 정리.
+- 다른 기기에서 받아 저장한 peerId는 길이 미보장 → 화면 표시에 `substring(0, 8)` 대신 `shortId()`.
+- 남은 lint Error(의도적으로 유지): `MissingPermission`(BleConnectionManager — 시작 시 권한 확인 + try/catch), `CoarseFineLocation`(FINE은 maxSdk 30이라 API 31+에선 요청 안 함 — 오탐), `NotificationPermission`(Android 13에서 POST_NOTIFICATIONS 미요청 → 상단 알림 배지만 안 보임. 호출 알람 화면·소리는 Activity로 뜨므로 무관. 기존부터 그랬음).
+
 ### 다음에 이어서 할 일
 - **실제 배포 전 필수**: 전용 release 키스토어 생성 + `app/build.gradle`에 release `signingConfig` 추가(위 "배포용 APK 서명" 참고).
 - Stage 5 실기기 검증(API26+ 2~3대, 가능하면 API24/25 기기도 섞어서): 계획 문서 9절 체크리스트 참고.

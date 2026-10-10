@@ -55,6 +55,11 @@ class BleGattClientManager(
     // 중복 호출해서 BluetoothGatt 핸들이 leak되고 결국 GATT 슬롯이 고갈된다.
     private val pendingConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
+    // connectGatt()로 연 모든 핸들(연결 중·연결됨 모두). stop() 때 직접 close()하기 위함 — 블루투스가
+    // 꺼지는 상황에서는 STATE_DISCONNECTED 콜백(평소 close() 지점)이 안 올 수 있어서, 그대로 두면
+    // 프로세스당 몇 개뿐인 GATT 클라이언트 슬롯이 블루투스를 껐다 켤 때마다 새어 결국 연결이 안 된다.
+    private val openGatts = java.util.concurrent.ConcurrentHashMap<String, BluetoothGatt>()
+
     @Suppress("MissingPermission")
     fun start(): Boolean {
         if (isActive) return true
@@ -77,9 +82,11 @@ class BleGattClientManager(
         isActive = false
         stopScanning()
         pendingConnections.clear()
-        connectionManager.all().filter { it.isClient }.forEach {
-            try { it.gatt?.disconnect() } catch (_: Exception) {}
+        for (gatt in openGatts.values) {
+            try { gatt.disconnect() } catch (_: Exception) {}
+            try { gatt.close() } catch (_: Exception) {}
         }
+        openGatts.clear()
     }
 
     @Suppress("MissingPermission")
@@ -160,9 +167,19 @@ class BleGattClientManager(
                             Log.w(TAG, "requestMtu failed: ${e.message}")
                         }
                     }
-                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                } else {
+                    // 끊김, 또는 "연결됨"인데 오류 status인 경우 — 후자를 그냥 두면 핸들이 영구히 열린 채
+                    // pendingConnections에 남아 그 기기로 다시는 연결을 시도하지 않는다.
+                    if (newState == BluetoothProfile.STATE_CONNECTED) {
+                        try { gatt.disconnect() } catch (_: Exception) {}
+                    }
                     pendingConnections.remove(device.address)
-                    connectionManager.remove(device.address)
+                    openGatts.remove(device.address, gatt)
+                    // 자기(클라이언트) 항목만 지운다 — 같은 기기가 우리 GATT 서버에 따로 붙어 있는
+                    // 서버 항목까지 지우면 그 링크로는 더 이상 보내지 못한다(서버 쪽 가드와 대칭).
+                    if (connectionManager.get(device.address)?.isClient != false) {
+                        connectionManager.remove(device.address)
+                    }
                     delegate.onDeviceDisconnected(device.address)
                     scope.launch {
                         delay(200)
@@ -239,7 +256,16 @@ class BleGattClientManager(
 
         pendingConnections.add(device.address)
         try {
-            device.connectGatt(context, false, gattCallback)
+            val gatt = device.connectGatt(context, false, gattCallback)
+            if (gatt == null) {
+                pendingConnections.remove(device.address)
+            } else if (!isActive) {
+                // stop()과 경합 — 이미 정리가 끝났으면 방금 연 핸들도 바로 닫는다.
+                pendingConnections.remove(device.address)
+                try { gatt.close() } catch (_: Exception) {}
+            } else {
+                openGatts[device.address] = gatt
+            }
         } catch (e: Exception) {
             pendingConnections.remove(device.address)
             Log.e(TAG, "Exception connecting to ${device.address}: ${e.message}")
