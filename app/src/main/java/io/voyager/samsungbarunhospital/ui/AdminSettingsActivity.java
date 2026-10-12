@@ -73,6 +73,11 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private TextView tvPreviewLeftRoom, tvPreviewLeftMsg, tvPreviewLeftTime;
     private TextView tvPreviewListRoom, tvPreviewListMsg, tvPreviewListTime;
 
+    // 환자 호출 창("어떤 도움이 필요하신가요?") 글씨 크기 (sp)
+    private int szCallTitle, szCallMsg;
+    private TextView tvCallTitleSizeVal, tvCallMsgSizeVal;
+    private TextView tvPreviewCallTitle, tvPreviewCallMsg;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -139,7 +144,19 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvPreviewListMsg  = findViewById(R.id.tvPreviewListMsg);
         tvPreviewListTime = findViewById(R.id.tvPreviewListTime);
 
+        szCallTitle = AppSettings.getCallTitleSize(this);
+        szCallMsg   = AppSettings.getCallMsgSize(this);
+        tvCallTitleSizeVal = findViewById(R.id.tvCallTitleSizeVal);
+        tvCallMsgSizeVal   = findViewById(R.id.tvCallMsgSizeVal);
+        tvPreviewCallTitle = findViewById(R.id.tvPreviewCallTitle);
+        tvPreviewCallMsg   = findViewById(R.id.tvPreviewCallMsg);
+
         refreshFontSizeLabels();
+
+        findViewById(R.id.btnCallTitleMinus).setOnClickListener(v -> { szCallTitle = Math.max(AppSettings.CALL_TITLE_MIN, szCallTitle - 2); refreshFontSizeLabels(); });
+        findViewById(R.id.btnCallTitlePlus) .setOnClickListener(v -> { szCallTitle = Math.min(AppSettings.CALL_TITLE_MAX, szCallTitle + 2); refreshFontSizeLabels(); });
+        findViewById(R.id.btnCallMsgMinus)  .setOnClickListener(v -> { szCallMsg   = Math.max(AppSettings.CALL_MSG_MIN,   szCallMsg   - 2); refreshFontSizeLabels(); });
+        findViewById(R.id.btnCallMsgPlus)   .setOnClickListener(v -> { szCallMsg   = Math.min(AppSettings.CALL_MSG_MAX,   szCallMsg   + 2); refreshFontSizeLabels(); });
 
         findViewById(R.id.btnLeftRoomMinus).setOnClickListener(v -> { szLeftRoom = Math.max(AppSettings.LEFT_ROOM_MIN, szLeftRoom - 1); refreshFontSizeLabels(); });
         findViewById(R.id.btnLeftRoomPlus) .setOnClickListener(v -> { szLeftRoom = Math.min(AppSettings.LEFT_ROOM_MAX, szLeftRoom + 1); refreshFontSizeLabels(); });
@@ -211,6 +228,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
             AppSettings.save(this, name, messages, pw);
             AppSettings.saveAlarmVolume(this, seekAlarmVolume.getProgress());
             AppSettings.saveFontSizes(this, szLeftRoom, szLeftMsg, szLeftTime, szListRoom, szListMsg, szListTime);
+            AppSettings.saveCallDialogFontSizes(this, szCallTitle, szCallMsg);
             Toast.makeText(this, "저장되었습니다.", Toast.LENGTH_SHORT).show();
             finish();
         });
@@ -843,6 +861,11 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvPreviewListRoom.setTextSize(szListRoom);
         tvPreviewListMsg .setTextSize(szListMsg);
         tvPreviewListTime.setTextSize(szListTime);
+
+        tvCallTitleSizeVal.setText("글씨 " + szCallTitle);
+        tvCallMsgSizeVal  .setText("글씨 " + szCallMsg);
+        tvPreviewCallTitle.setTextSize(szCallTitle);
+        tvPreviewCallMsg  .setTextSize(szCallMsg);
     }
 
     /** 관리자가 현장에서 "왜 근거리 통신이 안 되지?"를 스스로 판단할 수 있게 하는 가벼운 진단 패널. */

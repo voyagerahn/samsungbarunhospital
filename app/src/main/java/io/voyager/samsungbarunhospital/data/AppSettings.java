@@ -36,6 +36,10 @@ public class AppSettings {
     private static final String KEY_LIST_MSG_SIZE   = "list_msg_size";
     private static final String KEY_LIST_TIME_SIZE  = "list_time_size";
 
+    // 환자 호출 창("어떤 도움이 필요하신가요?") 글씨 크기 (sp)
+    private static final String KEY_CALL_TITLE_SIZE = "call_title_size";
+    private static final String KEY_CALL_MSG_SIZE   = "call_msg_size";
+
     private static final String DEFAULT_PASSWORD  = "0819";
     private static final int    DEFAULT_ALARM_VOL = 80; // 기본 80%
 
@@ -93,6 +97,39 @@ public class AppSettings {
                 .putInt(KEY_LIST_ROOM_SIZE, clamp(listRoom, LIST_ROOM_MIN, LIST_ROOM_MAX))
                 .putInt(KEY_LIST_MSG_SIZE,  clamp(listMsg,  LIST_MSG_MIN,  LIST_MSG_MAX))
                 .putInt(KEY_LIST_TIME_SIZE, clamp(listTime, LIST_TIME_MIN, LIST_TIME_MAX))
+                .apply();
+    }
+
+    // ── 환자 호출 창 글씨 크기 (sp) ─────────────────────────────────────────
+    // 제목("어떤 도움이 필요하신가요?")과 호출 메시지 버튼. 예전에는 20sp/18sp 고정이라 10인치급
+    // 태블릿에서 침대에 누운 환자가 보기엔 너무 작았다. 기본값은 화면 크기에 맞춰 정하고(저장한 적이
+    // 없을 때만 적용), 관리자가 "화면·알람 설정"에서 조절할 수 있다.
+    public static final int CALL_TITLE_MIN = 18, CALL_TITLE_MAX = 64;
+    public static final int CALL_MSG_MIN   = 16, CALL_MSG_MAX   = 56;
+
+    /** 화면의 짧은 쪽 폭(dp) 기준 기본 크기 — 큰 태블릿일수록 크게. */
+    public static int defaultCallTitleSize(Context ctx) {
+        int sw = ctx.getResources().getConfiguration().smallestScreenWidthDp;
+        return sw >= 720 ? 40 : sw >= 600 ? 34 : 24;
+    }
+
+    public static int defaultCallMsgSize(Context ctx) {
+        int sw = ctx.getResources().getConfiguration().smallestScreenWidthDp;
+        return sw >= 720 ? 34 : sw >= 600 ? 28 : 22;
+    }
+
+    public static int getCallTitleSize(Context ctx) {
+        return clamp(prefs(ctx).getInt(KEY_CALL_TITLE_SIZE, defaultCallTitleSize(ctx)), CALL_TITLE_MIN, CALL_TITLE_MAX);
+    }
+
+    public static int getCallMsgSize(Context ctx) {
+        return clamp(prefs(ctx).getInt(KEY_CALL_MSG_SIZE, defaultCallMsgSize(ctx)), CALL_MSG_MIN, CALL_MSG_MAX);
+    }
+
+    public static void saveCallDialogFontSizes(Context ctx, int title, int msg) {
+        prefs(ctx).edit()
+                .putInt(KEY_CALL_TITLE_SIZE, clamp(title, CALL_TITLE_MIN, CALL_TITLE_MAX))
+                .putInt(KEY_CALL_MSG_SIZE,   clamp(msg,   CALL_MSG_MIN,   CALL_MSG_MAX))
                 .apply();
     }
 

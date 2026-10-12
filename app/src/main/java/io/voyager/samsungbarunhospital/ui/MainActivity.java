@@ -299,16 +299,22 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 글씨 크기는 관리자 설정(화면·알람 설정 → 환자 호출 창 글씨 크기)에서 조절한다. 여백·버튼 높이는
+        // 전부 dp 기준 — 예전엔 px 값(높이 120px 등)이라 고해상도 태블릿일수록 실제 크기가 작아졌다.
+        int titleSize = AppSettings.getCallTitleSize(this);
+        int msgSize   = AppSettings.getCallMsgSize(this);
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 20, 40, 20);
+        layout.setPadding(dpToPx(28), dpToPx(20), dpToPx(28), dpToPx(20));
 
         TextView title = new TextView(this);
         title.setText("어떤 도움이 필요하신가요?");
-        title.setTextSize(20f);
+        title.setTextSize(titleSize);
         title.setTextColor(android.graphics.Color.WHITE);
+        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 24);
+        title.setPadding(0, 0, 0, dpToPx(20));
         layout.addView(title);
 
         ScrollView scrollView = new ScrollView(this);
@@ -319,12 +325,17 @@ public class MainActivity extends AppCompatActivity {
         for (String message : messages) {
             Button btn = new Button(this);
             btn.setText(message);
-            btn.setTextSize(18f);
+            btn.setTextSize(msgSize);
             btn.setTextColor(android.graphics.Color.WHITE);
             btn.setBackgroundResource(R.drawable.bg_button_primary);
+            btn.setAllCaps(false);
+            // 글씨가 커지면 버튼도 같이 커지도록 높이를 고정하지 않고 안쪽 여백으로 잡는다(긴 메시지는 줄바꿈).
+            btn.setMinHeight(0);
+            btn.setMinimumHeight(0);
+            btn.setPadding(dpToPx(16), dpToPx(18), dpToPx(16), dpToPx(18));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 120);
-            params.setMargins(0, 0, 0, 16);
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.setMargins(0, 0, 0, dpToPx(12));
             btn.setLayoutParams(params);
             btn.setOnClickListener(v -> {
                 dialogRef[0].dismiss();
@@ -335,18 +346,26 @@ public class MainActivity extends AppCompatActivity {
 
         Button btnCancel = new Button(this);
         btnCancel.setText("취소");
-        btnCancel.setTextSize(16f);
+        btnCancel.setTextSize(Math.max(16, Math.round(msgSize * 0.8f)));
         btnCancel.setTextColor(android.graphics.Color.WHITE);
         btnCancel.setBackgroundResource(R.drawable.bg_button_neutral_dark);
+        btnCancel.setMinHeight(0);
+        btnCancel.setMinimumHeight(0);
+        btnCancel.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 100);
-        cancelParams.setMargins(0, 8, 0, 0);
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelParams.setMargins(0, dpToPx(8), 0, 0);
         btnCancel.setLayoutParams(cancelParams);
         btnCancel.setOnClickListener(v -> dialogRef[0].dismiss());
         layout.addView(btnCancel);
 
         dialogRef[0] = new AlertDialog.Builder(this).setView(scrollView).create();
         dialogRef[0].show();
+        // 기본 다이얼로그 폭은 태블릿에서 좁아 큰 글씨의 메시지가 여러 줄로 쪼개진다 — 화면 폭의 70%로 넓힌다.
+        if (dialogRef[0].getWindow() != null) {
+            int width = Math.round(getResources().getDisplayMetrics().widthPixels * 0.7f);
+            dialogRef[0].getWindow().setLayout(width, android.view.WindowManager.LayoutParams.WRAP_CONTENT);
+        }
     }
 
     /** 권한이 확인된 이후(이미 있었거나 방금 승인됨) BLE mesh 서비스 기동 — 수신 리스너는 서비스가 직접 등록. */

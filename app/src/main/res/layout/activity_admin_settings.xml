@@ -783,6 +783,81 @@
 
                     </LinearLayout>
 
+                    <!-- 카드: 환자 호출 창 글씨 크기 (벨을 눌렀을 때 뜨는 "어떤 도움이 필요하신가요?" 창) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/bg_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:text="환자 호출 창 글씨 크기 (환자 태블릿)"
+                            android:textColor="@color/text_accent_blue"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:text="벨을 눌렀을 때 뜨는 호출 창의 글씨 크기입니다. 아래 미리보기에 바로 반영되고, 하단 저장 버튼을 눌러야 적용됩니다."
+                            android:textColor="@color/text_muted"
+                            android:textSize="13sp" />
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="안내 문구 크기 (어떤 도움이 필요하신가요?)" android:textColor="@color/text_hint" android:textSize="14sp" />
+                            <Button android:id="@+id/btnCallTitleMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="@drawable/bg_button_neutral" android:textColor="@color/text_primary" android:padding="0dp" />
+                            <TextView android:id="@+id/tvCallTitleSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/text_accent_gold" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnCallTitlePlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="@drawable/bg_button_neutral" android:textColor="@color/text_primary" android:padding="0dp" />
+                        </LinearLayout>
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="호출 메시지 크기" android:textColor="@color/text_hint" android:textSize="14sp" />
+                            <Button android:id="@+id/btnCallMsgMinus" android:layout_width="48dp" android:layout_height="44dp" android:text="−" android:textSize="22sp" android:background="@drawable/bg_button_neutral" android:textColor="@color/text_primary" android:padding="0dp" />
+                            <TextView android:id="@+id/tvCallMsgSizeVal" android:layout_width="80dp" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/text_accent_gold" android:textSize="16sp" android:textStyle="bold" />
+                            <Button android:id="@+id/btnCallMsgPlus" android:layout_width="48dp" android:layout_height="44dp" android:text="+" android:textSize="22sp" android:background="@drawable/bg_button_neutral" android:textColor="@color/text_primary" android:padding="0dp" />
+                        </LinearLayout>
+
+                        <!-- 실시간 미리보기: 실제 호출 창과 같은 글씨 크기·버튼 모양 -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="@color/bg_row"
+                            android:orientation="vertical"
+                            android:padding="20dp">
+
+                            <TextView
+                                android:id="@+id/tvPreviewCallTitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="16dp"
+                                android:gravity="center"
+                                android:text="어떤 도움이 필요하신가요?"
+                                android:textColor="@color/text_primary"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvPreviewCallMsg"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_button_primary"
+                                android:gravity="center"
+                                android:paddingStart="16dp"
+                                android:paddingTop="18dp"
+                                android:paddingEnd="16dp"
+                                android:paddingBottom="18dp"
+                                android:text="화장실 도움이 필요해요"
+                                android:textColor="@color/text_primary" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
                 </LinearLayout>
             </ScrollView>
 
