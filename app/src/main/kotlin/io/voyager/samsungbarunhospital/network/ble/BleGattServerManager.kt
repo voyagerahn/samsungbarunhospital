@@ -229,6 +229,13 @@ class BleGattServerManager(
         gattServer?.addService(service)
     }
 
+    /** 상대가 우리 GATT 서버에 걸어온 링크를 끊는다(등록된 간호사에게 연결 자리를 내주기 위해). */
+    @Suppress("MissingPermission")
+    fun disconnectDevice(address: String) {
+        val device = connectionManager.get(address)?.takeIf { !it.isClient }?.device ?: return
+        try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
+    }
+
     fun getGattServer(): BluetoothGattServer? = gattServer
     fun getCharacteristic(): BluetoothGattCharacteristic? = characteristic
 

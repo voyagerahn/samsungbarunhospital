@@ -15,7 +15,13 @@ enum class BlePacketType(val value: Byte) {
     CANCEL(0x02),
     CONFIRMED(0x03),
     ANNOUNCE(0x04),
-    FRAGMENT(0x05);
+    FRAGMENT(0x05),
+    /**
+     * 수신 확인. payload = 확인하는 패킷의 messageId(hex). CALL/CANCEL/CONFIRMED를 받은 기기가 보낸
+     * 기기에게 돌려준다 — Wi-Fi(TCP) 경로의 "ACK" 응답과 같은 역할. v2.2.2에서 추가: 그 이전 버전은
+     * 모르는 타입이라 패킷을 버리므로(decode가 null) 섞여 있어도 오동작은 없고, 확인만 안 돌아온다.
+     */
+    ACK(0x06);
 
     companion object {
         fun fromValue(v: Byte): BlePacketType? = values().find { it.value == v }

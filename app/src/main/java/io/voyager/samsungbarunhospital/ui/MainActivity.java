@@ -54,6 +54,9 @@ public class MainActivity extends AppCompatActivity {
     private final List<String>       activeCallIds       = new ArrayList<>();
     private final List<String>       activeCallMsgs      = new ArrayList<>();
     private final List<String>       confirmedMessages   = new ArrayList<>(); // 완료 표시 중인 메시지
+    // 간호사 태블릿이 받았다고 확인된 호출 id (Wi-Fi는 ACK 응답, 블루투스는 ACK 패킷). 메인 스레드에서만 접근.
+    private final java.util.Set<String> deliveredCallIds = new java.util.HashSet<>();
+    private static final long BLE_ACK_NOTICE_DELAY_MS = 8000L;
     private final Handler            bannerHandler       = new Handler(Looper.getMainLooper());
     private final List<Bitmap>       loadedBitmaps       = new ArrayList<>(); // 비트맵 추적 → onDestroy에서 recycle
 
@@ -82,6 +85,18 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
         setContentView(R.layout.activity_main);
+
+        // 블루투스로 보낸 호출의 전달 결과 — Wi-Fi 경로가 ACK 응답으로 "전달되었습니다/전달 실패"를
+        // 알려주는 것과 같은 역할. 환자가 다른 앱(유튜브 등)을 보고 있는 동안에도 받아야 하므로
+        // onResume/onPause가 아니라 Activity 수명 전체에 걸어둔다.
+        BleMeshManager.setDeliveryListener(new BleMeshManager.DeliveryListener() {
+            @Override public void onCallDelivered(String callId) {
+                runOnUiThread(() -> onBleCallDelivered(callId));
+            }
+            @Override public void onCallUndelivered(String callId) {
+                runOnUiThread(() -> onBleCallUndelivered(callId));
+            }
+        });
 
         buttonContainer  = findViewById(R.id.buttonContainer);
         bellButton       = findViewById(R.id.bellButton);
@@ -161,6 +176,10 @@ public class MainActivity extends AppCompatActivity {
             // 메시지 일치하는 첫 번째 항목 제거 (간호사 CONFIRMED 패킷은 UUID 없이 메시지만 포함)
             int idx = activeCallMsgs.indexOf(message);
             if (idx >= 0) {
+                // 간호사가 확인했으니 이 호출은 더 보낼 필요가 없다(수신 확인을 못 받아 재전송 중이었더라도).
+                String confirmedId = activeCallIds.get(idx);
+                BleMeshManager.stopCall(confirmedId);
+                deliveredCallIds.remove(confirmedId);
                 activeCallIds.remove(idx);
                 activeCallMsgs.remove(idx);
             }
@@ -183,6 +202,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        BleMeshManager.setDeliveryListener(null);
         // 메시지 큐에 남은 지연 콜백 제거 — Activity 참조 누수 방지
         bannerHandler.removeCallbacksAndMessages(null);
         // 남은 비트맵 해제
@@ -375,21 +395,30 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 실제로 보낸 경로에 맞춰 결과를 알린다. 예전에는 TCP가 실패해도 "BLE가 지원되는 기기"이기만
-     * 하면 "전달되었습니다"라고 표시했는데, 다른 Wi-Fi에서 IP만 등록된 간호사는 BLE peerId를 한 번도
-     * 학습하지 못해 BLE로도 실제로는 아무것도 안 보내지는 경우가 있었다 — 환자 쪽은 "갔다"고 보이는데
-     * 간호사 쪽에는 알람이 안 뜨는 원인. BLE는 수신 확인(ACK)이 없으므로 "전달됨"이 아니라 "보냄"으로
-     * 표시하고, 간호사 확인(CONFIRMED)이 오면 배너에서 완료로 바뀐다.
+     * 보낸 경로에 맞춰 결과를 알린다. 블루투스는 Wi-Fi와 "통신 수단만 다르고 동작은 같게" 맞춘다:
+     * - Wi-Fi: 간호사 태블릿이 ACK를 돌려주면 "전달되었습니다", 아니면 "전달 실패".
+     * - 블루투스: 간호사 태블릿의 수신 확인(ACK 패킷)이 오면 똑같이 "전달되었습니다"
+     *   ([onBleCallDelivered]). 확인이 올 때까지 BleMeshManager가 계속 다시 보내고, 연결이 끊겨 있으면
+     *   다시 닿을 때까지 기다렸다 보낸다. 끝내 못 보내면 "전달 실패"([onBleCallUndelivered]).
+     *
+     * 예전에는 Wi-Fi가 실패해도 "BLE가 지원되는 기기"이기만 하면 "전달되었습니다"라고 표시해서, 환자
+     * 쪽은 갔다고 보이는데 간호사 쪽에는 알람이 안 뜨는 일이 있었다.
      */
     private void reportCallResult(String callId, String message, boolean tcpSuccess, int bleSentCount) {
         if (tcpSuccess) {
+            deliveredCallIds.add(callId);
             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
-        } else if (bleSentCount > 0 && BleMeshManager.getWritableConnectionCount() == 0) {
-            // 지금은 블루투스 링크가 없어 실제로는 못 나갔고, BleMeshManager가 보관했다가 간호사 태블릿이
-            // 다시 감지되면 자동으로 보낸다(PENDING_CALL_TIMEOUT_MS). "보냈다"고 하면 사실과 다르다.
-            Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n다시 연결되면 자동으로 전달합니다 (10분 이내).", Toast.LENGTH_LONG).show();
         } else if (bleSentCount > 0) {
-            Toast.makeText(this, "블루투스로 호출했습니다.\n간호사 확인 시 '호출 완료'로 바뀝니다.", Toast.LENGTH_LONG).show();
+            if (isAnyBleNurseReachable()) {
+                // 곧 수신 확인이 오면 "전달되었습니다"가 뜬다. 한동안 안 오면 계속 시도 중임을 알린다.
+                bannerHandler.postDelayed(() -> {
+                    if (activeCallIds.contains(callId) && !deliveredCallIds.contains(callId)) {
+                        Toast.makeText(this, "아직 간호사 태블릿의 수신 확인이 없습니다.\n계속 보내는 중입니다.", Toast.LENGTH_LONG).show();
+                    }
+                }, BLE_ACK_NOTICE_DELAY_MS);
+            } else {
+                Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n다시 연결되면 자동으로 전달합니다.", Toast.LENGTH_LONG).show();
+            }
         } else {
             Toast.makeText(this, "전달 실패: 간호사 태블릿에 연결할 수 없습니다." + bleUnavailableHint(), Toast.LENGTH_LONG).show();
             return;
@@ -397,6 +426,35 @@ public class MainActivity extends AppCompatActivity {
         activeCallIds.add(callId);
         activeCallMsgs.add(message);
         refreshCallBanner();
+    }
+
+    /** 블루투스로 호출할 간호사(등록된 IP에 연결된 것 + BLE 전용) 중 지금 닿을 수 있는 곳이 있는지. */
+    private boolean isAnyBleNurseReachable() {
+        for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
+            if (BleMeshManager.isPeerReachable(n.peerId)) return true;
+        }
+        for (String ip : AppSettings.getNurseIps(this)) {
+            String peerId = AppSettings.getNursePeerId(this, ip);
+            if (peerId != null && BleMeshManager.isPeerReachable(peerId)) return true;
+        }
+        return false;
+    }
+
+    private void onBleCallDelivered(String callId) {
+        if (!activeCallIds.contains(callId)) return;      // 이미 취소했거나 간호사가 확인함
+        if (!deliveredCallIds.add(callId)) return;         // 간호사가 여러 명이면 첫 확인만 알린다
+        Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+        refreshCallBanner();
+    }
+
+    private void onBleCallUndelivered(String callId) {
+        if (deliveredCallIds.contains(callId)) return;     // 다른 간호사에게는 전달됐음
+        int idx = activeCallIds.indexOf(callId);
+        if (idx < 0) return;
+        activeCallIds.remove(idx);
+        activeCallMsgs.remove(idx);
+        refreshCallBanner();
+        Toast.makeText(this, "전달 실패: 간호사 태블릿에 호출을 전달하지 못했습니다.\n다시 호출해주세요.", Toast.LENGTH_LONG).show();
     }
 
     /** BLE로도 못 보낸 이유를 현장에서 바로 조치할 수 있게 한 줄로 알려준다. */
@@ -473,7 +531,8 @@ public class MainActivity extends AppCompatActivity {
             row.setLayoutParams(rowParams);
 
             TextView tvMsg = new TextView(this);
-            tvMsg.setText(msg);
+            // 간호사 태블릿이 받았다고 확인된 호출은 표시해 준다(아직이면 전달을 계속 시도 중인 상태).
+            tvMsg.setText(deliveredCallIds.contains(callId) ? msg + "  ✓ 전달됨" : msg);
             tvMsg.setTextColor(getColor(R.color.text_accent_blue));
             tvMsg.setTextSize(16f);
             LinearLayout.LayoutParams tvParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -552,6 +611,7 @@ public class MainActivity extends AppCompatActivity {
             activeCallIds.remove(idx);
             activeCallMsgs.remove(idx);
         }
+        deliveredCallIds.remove(callId);
         refreshCallBanner();
         Toast.makeText(this, "호출이 취소되었습니다.", Toast.LENGTH_SHORT).show();
     }

@@ -23,8 +23,17 @@ data class BleConnection(
     @Volatile var gatt: BluetoothGatt? = null,
     @Volatile var writeCharacteristic: BluetoothGattCharacteristic? = null,
     @Volatile var subscribed: Boolean = false,
-    val connectedAt: Long = System.currentTimeMillis()
-)
+    val connectedAt: Long = System.currentTimeMillis(),
+    /**
+     * 이 링크 건너편 기기의 peerId. 클라이언트 링크는 스캔한 광고에서, 그 외에는 이 링크로 직접 도착한
+     * (중계되지 않은) ANNOUNCE에서 알게 된다. 모르면 null. (bitchat의 addressPeerMap과 같은 역할)
+     */
+    @Volatile var peerIdHex: String? = null
+) {
+    /** 지금 이 링크로 실제로 데이터를 내보낼 수 있는지. */
+    val isWritable: Boolean
+        get() = if (isClient) gatt != null && writeCharacteristic != null else subscribed
+}
 
 /**
  * Tracks every live BLE link (both GATT-server and GATT-client side) so the mesh facade can
@@ -78,9 +87,20 @@ class BleConnectionManager {
      * 구독(서버)이 안 끝나 [broadcast]가 그 링크를 조용히 건너뛰므로, "보낼 수 있는가"는 [count]가
      * 아니라 이 값으로 판단해야 한다.
      */
-    fun writableCount(): Int = connections.values.count {
-        if (it.isClient) it.gatt != null && it.writeCharacteristic != null else it.subscribed
+    fun writableCount(): Int = connections.values.count { it.isWritable }
+
+    /** [address] 링크의 상대가 [peerIdHex]임을 기록한다(그 링크가 아직 살아있을 때만). */
+    fun bindPeer(address: String, peerIdHex: String) {
+        connections[address]?.peerIdHex = peerIdHex
     }
+
+    /**
+     * [peerIdHex]와 주고받을 수 있는 링크가 이미 있는지 — 방향(우리가 건 것/상대가 건 것)은 따지지 않는다.
+     * 쓸 수 있는 링크만 센다: 구독이 안 끝난 서버 링크를 "연결됨"으로 치면, 그 링크가 끝내 준비되지
+     * 않을 때 우리 쪽에서 새로 연결하는 것까지 막아버리기 때문.
+     */
+    fun isPeerLinked(peerIdHex: String): Boolean =
+        connections.values.any { it.peerIdHex == peerIdHex && it.isWritable }
 
     fun isFull(): Boolean = connections.size >= BleMeshConstants.MAX_CONNECTIONS
 

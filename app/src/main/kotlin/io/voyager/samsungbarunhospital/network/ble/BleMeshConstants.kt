@@ -8,8 +8,8 @@ import java.util.UUID
  * TTL/dedup/fragmentation values are adapted from bitchat-android
  * (https://github.com/permissionlesstech/bitchat-android, app/src/main/java/com/bitchat/android/mesh/)
  * but re-tuned for a ward-scale nurse-call deployment rather than an open chat mesh:
- * store-forward timeout matches CallQueue's 30-minute expiry instead of bitchat's 12h,
- * and TTL/dedup window are unchanged since ward density is comparable to bitchat's assumptions.
+ * undelivered messages are retried for CallQueue's 30-minute expiry instead of bitchat's 12h
+ * store-forward window, and TTL/dedup window are unchanged since ward density is comparable.
  */
 object BleMeshConstants {
     const val VERSION: Byte = 1
@@ -26,15 +26,24 @@ object BleMeshConstants {
     const val FRAGMENT_CHUNK_BYTES = 350
     const val FRAGMENT_REASSEMBLY_TIMEOUT_MS = 30 * 1000L
 
-    // Matches CallQueue.EXPIRE_MS (30 minutes) — a CONFIRMED reply older than this is
-    // no longer meaningful to the patient tablet's UI.
-    const val STORE_FORWARD_TIMEOUT_MS = 30 * 60 * 1000L
-    const val STORE_FORWARD_MAX_PER_PEER = 20
-
-    // 연결된 기기가 0대라 실제로 못 나간 CALL/CANCEL을 보관하는 시간. 그 안에 받는 기기가 다시
-    // 감지되면 자동 재전송한다. 환자 화면에는 그동안 "대기 중"으로 남아 있고, 간호사 쪽은 callId로
-    // 중복을 거르므로 늦게 도착해도 안전하다. 너무 길면 한참 지난 호출이 뒤늦게 울리므로 10분.
-    const val PENDING_CALL_TIMEOUT_MS = 10 * 60 * 1000L
+    // 호출·취소·확인응답은 받는 기기의 수신 확인(ACK)이 올 때까지 다시 보낸다(BleReliableOutbox).
+    // 이 시간이 지나도 확인이 없으면 포기 — 간호사 쪽 호출 만료(CallQueue.EXPIRE_MS, 30분)와 같은 값.
+    // 요구사항이 "연결이 끊겨도 등록한 간호사 태블릿으로 계속 보낸다"라서 짧게 끊지 않는다.
+    const val DELIVERY_TIMEOUT_MS = 30 * 60 * 1000L
+    // 재전송 간격: 1초, 2초, 4초, 8초, 이후 10초마다.
+    const val RESEND_BASE_DELAY_MS = 1_000L
+    const val RESEND_MAX_DELAY_MS = 10_000L
+    // 재전송할 것이 있는지 살피는 주기(대기 중인 메시지가 있을 때만 돈다).
+    const val OUTBOX_TICK_MS = 1_000L
+    // 확인을 기다리는 메시지 수 상한. 간호사와 끊긴 채 벨을 계속 눌러도 메모리와 재전송량이 무한정
+    // 늘지 않게 한다 — 넘치면 가장 오래된 것부터 포기한다.
+    const val OUTBOX_MAX_ENTRIES = 50
+    // 재전송된 호출·취소·확인응답을 중계할 때, 같은 메시지를 이 간격보다 자주 중계하지 않는다.
+    const val RELAY_REPEAT_MIN_INTERVAL_MS = 700L
+    // 이미 처리한 호출·취소·확인응답의 messageId를 기억하는 시간/개수. 재전송이 일반 중복 검사 창
+    // (DEDUP_WINDOW_MS, 5분)보다 오래 이어져도 같은 메시지를 두 번 처리하지 않도록 따로 둔다.
+    const val DELIVERED_MEMORY_MS = 40 * 60 * 1000L
+    const val DELIVERED_MEMORY_MAX = 500
 
     const val STALE_PEER_TIMEOUT_MS = 60 * 1000L
     const val ANNOUNCE_INTERVAL_MS = 30 * 1000L
@@ -59,6 +68,9 @@ object BleMeshConstants {
     // 블루투스 스택이 불안정해진다. 주소별로 5s, 10s, 20s … 최대 60s 간격을 둔다.
     const val CONNECT_RETRY_BACKOFF_BASE_MS = 5_000L
     const val CONNECT_RETRY_BACKOFF_MAX_MS = 60_000L
+    // 등록된 간호사 태블릿은 끊겨도 계속 붙어야 하므로 재시도 간격 상한을 짧게 둔다.
+    const val CONNECT_RETRY_BACKOFF_MAX_NURSE_MS = 15_000L
+
 
     // 연결이 하나도 없는 채로 이 시간이 지나면 광고를 새로 시작한다(광고가 조용히 멈춘 경우 대비).
     const val ADVERTISE_REFRESH_WHEN_ALONE_MS = 5 * 60 * 1000L

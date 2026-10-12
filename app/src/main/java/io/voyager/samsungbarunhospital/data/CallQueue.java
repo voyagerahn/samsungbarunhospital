@@ -32,7 +32,17 @@ public class CallQueue {
 
     private static final CallQueue INSTANCE = new CallQueue();
 
+    /**
+     * 확인·취소로 이미 끝난 호출 id를 기억하는 시간. 블루투스 경로는 수신 확인을 못 받으면 같은 호출을
+     * 다시 보내는데, 그 재전송이 간호사가 확인해서 지운 뒤에 도착하면 같은 호출이 새 호출처럼 다시
+     * 울리게 된다 — 끝난 id를 기억해 두고 무시한다. 보내는 쪽의 재전송 기한(30분)보다 조금 길게.
+     */
+    private static final long CLOSED_MEMORY_MS = 40 * 60 * 1000L;
+    private static final int  CLOSED_MEMORY_MAX = 200;
+
     private final CopyOnWriteArrayList<CallItem> items     = new CopyOnWriteArrayList<>();
+    // 끝난 호출 id → 끝난 시각. 삽입 순서 유지(오래된 것부터 버림). synchronized(this)로 보호.
+    private final java.util.LinkedHashMap<String, Long> closedIds = new java.util.LinkedHashMap<>();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -64,6 +74,9 @@ public class CallQueue {
                 return false;
             }
         }
+        if (isClosed(newItem.id, now)) {
+            return false; // 이미 확인·취소된 호출의 재전송
+        }
 
         // 최대 크기 초과 시 가장 오래된 항목(리스트 끝) 제거
         while (items.size() >= MAX_SIZE) {
@@ -78,17 +91,20 @@ public class CallQueue {
     /**
      * 환자 취소 → UUID로 정확히 1건만 제거
      */
-    public void cancelById(String id) {
+    public synchronized void cancelById(String id) {
         items.removeIf(i ->
                 i.id.equals(id) &&
                 CallItem.STATUS_WAITING.equals(i.status));
+        // 취소가 호출보다 먼저 도착한 경우(순서 뒤바뀜)에도, 뒤늦게 온 그 호출이 뜨지 않게 된다.
+        rememberClosed(id);
         notifyListeners();
     }
 
     /**
      * 간호사 확인 → 큐에서 제거
      */
-    public void markDone(String id) {
+    public synchronized void markDone(String id) {
+        rememberClosed(id);
         for (CallItem item : items) {
             if (item.id.equals(id)) {
                 item.status = CallItem.STATUS_DONE;
@@ -111,6 +127,21 @@ public class CallQueue {
             return true;
         }
         return false;
+    }
+
+    private void rememberClosed(String id) {
+        closedIds.remove(id); // 다시 넣어 순서를 최신으로
+        closedIds.put(id, System.currentTimeMillis());
+        java.util.Iterator<String> it = closedIds.keySet().iterator();
+        while (closedIds.size() > CLOSED_MEMORY_MAX && it.hasNext()) {
+            it.next();
+            it.remove();
+        }
+    }
+
+    private boolean isClosed(String id, long now) {
+        closedIds.values().removeIf(closedAt -> now - closedAt > CLOSED_MEMORY_MS);
+        return closedIds.containsKey(id);
     }
 
     private void purgeExpired(long now) {

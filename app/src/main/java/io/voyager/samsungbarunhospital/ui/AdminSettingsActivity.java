@@ -496,6 +496,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
         return row;
     }
 
+    /** 등록된 간호사 태블릿과 지금 어떤 상태로 이어져 있는지 한 마디로. */
+    private static String describeNurseLink(String peerId) {
+        if (BleMeshManager.isPeerDirectlyLinked(peerId)) return "직접 연결됨";
+        if (BleMeshManager.isPeerOnline(peerId)) return "다른 태블릿을 거쳐 연결됨";
+        return "감지 안 됨";
+    }
+
     private Button buildRowButton(String text, int backgroundRes, View.OnClickListener onClick) {
         Button btn = new Button(this);
         btn.setText(text);
@@ -954,19 +961,22 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 sb.append("블루투스 연결 안 됨");
                 warnings.add(ip + " 간호사는 블루투스 연결이 안 되어 있어 Wi-Fi가 안 될 때 호출이 가지 않습니다 — 통신 설정에서 '블루투스 연결'을 하세요.");
             } else {
-                boolean online = BleMeshManager.isPeerOnline(peerId);
-                sb.append(shortId(peerId)).append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
-                if (!online && running) warnings.add(ip + " 간호사 태블릿(" + shortId(peerId) + ")이 근처에서 감지되지 않습니다.");
+                sb.append(shortId(peerId)).append(" — ").append(describeNurseLink(peerId));
+                if (!BleMeshManager.isPeerReachable(peerId) && running) warnings.add(ip + " 간호사 태블릿(" + shortId(peerId) + ")이 근처에서 감지되지 않습니다. 호출하면 다시 연결될 때까지 기다렸다가 전달됩니다.");
             }
         }
         for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
             targets++;
-            boolean online = BleMeshManager.isPeerOnline(n.peerId);
+            boolean online = BleMeshManager.isPeerReachable(n.peerId);
             sb.append("\n  · BLE 전용 ").append(n.label != null ? n.label : "").append(" (").append(shortId(n.peerId)).append(')')
-              .append(online ? " — 근처에서 감지됨" : " — 감지 안 됨");
+              .append(" — ").append(describeNurseLink(n.peerId));
             if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : shortId(n.peerId)) + "이(가) 근처에서 감지되지 않습니다.");
         }
         if (targets == 0) sb.append(" 없음 (간호사 태블릿이면 정상)");
+        int pending = BleMeshManager.getPendingDeliveryCount();
+        if (pending > 0) {
+            sb.append("\n수신 확인을 기다리며 다시 보내는 중: ").append(pending).append("건");
+        }
 
         StringBuilder result = new StringBuilder();
         if (warnings.isEmpty()) {

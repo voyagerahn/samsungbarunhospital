@@ -34,14 +34,21 @@ import kotlinx.coroutines.launch
  * Self-healing (added after a field report of "works after boot, then 0 connections until
  * reboot"): the scan is restarted periodically ([refreshScanIfDue]) because Android silently stops
  * delivering results for a scan left running for 30+ minutes, which made a dropped link
- * unrecoverable; connection attempts back off per address; and a peer already linked under one
- * BLE address isn't connected again when its (rotating) advertising address changes.
+ * unrecoverable; connection attempts back off per address; and a peer that is already linked
+ * (in either direction, or under an older advertising address) isn't connected again.
+ *
+ * Who to connect to is decided by [BleConnectPolicy]: registered nurses always get a slot first;
+ * other tablets are still linked (they relay toward the nurse when it's out of direct range).
  */
 class BleGattClientManager(
     private val context: Context,
     private val scope: CoroutineScope,
     private val connectionManager: BleConnectionManager,
-    private val delegate: BleTransportDelegate
+    private val delegate: BleTransportDelegate,
+    /** 이 기기에 등록된 간호사 태블릿들의 peerId(hex) — 연결 자리를 먼저 확보할 대상. */
+    private val registeredNurses: () -> Set<String> = { emptySet() },
+    /** 상대가 우리 서버에 걸어온 링크를 끊어달라는 요청(주소). */
+    private val evictServerLink: (String) -> Unit = {}
 ) {
     companion object {
         private const val TAG = "BleGattClientManager"
@@ -68,9 +75,9 @@ class BleGattClientManager(
     private class ConnectBackoff(val failures: Int, val retryAt: Long)
     private val connectBackoff = java.util.concurrent.ConcurrentHashMap<String, ConnectBackoff>() // key = address
 
-    // 클라이언트로 연결했거나 연결 중인 주소 → 그 기기의 peerId(광고의 service data에서 읽음).
-    // Android는 광고 주소를 주기적으로 바꾸기 때문에, 주소만 보고 판단하면 이미 연결된 같은 태블릿에
-    // 새 주소로 또 연결해 링크가 중복으로 쌓인다(연결 상한을 같은 기기가 다 채움).
+    // 연결을 시도 중인 주소 → 그 기기의 peerId(광고의 service data에서 읽음). 연결이 성립한 뒤의
+    // "누구와 연결돼 있나"는 BleConnectionManager.isPeerLinked가 판단한다. Android는 광고 주소를
+    // 주기적으로 바꾸므로 주소만 보면 이미 연결된 같은 태블릿에 새 주소로 또 연결하게 된다.
     private val clientPeerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // connectGatt()를 호출했지만 아직 connectionManager에 등록되지 않은(MTU 협상 중인) 주소.
@@ -168,6 +175,11 @@ class BleGattClientManager(
                 isScanning = false
                 val streak = ++scanFailureStreak
                 // 같은 실패가 몇 초마다 반복되므로 처음과 이후 10회마다만 기록한다.
+                if (errorCode == ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED) {
+                    // 기기가 아예 지원하지 않는 경우 — 재시도해도 같으므로 한 번만 기록하고 멈춘다.
+                    if (streak == 1) DiagLog.log("BLE검색", "주변 기기 검색 불가: 이 기기가 지원하지 않음 (오류코드 $errorCode)")
+                    return
+                }
                 if (streak == 1 || streak % 10 == 0) {
                     DiagLog.log("BLE검색", "주변 기기 검색 실패 ${streak}회 연속: 오류코드 $errorCode (${scanErrorText(errorCode)}), 간격을 늘려가며 재시도")
                 }
@@ -225,29 +237,64 @@ class BleGattClientManager(
     private fun handleScanResult(result: ScanResult) {
         scanFailureStreak = 0
         val device = result.device
-        if (connectionManager.isDeviceConnected(device.address)) return
-        if (pendingConnections.contains(device.address)) return
-        if (connectionManager.isFull()) return
-        val backoff = connectBackoff[device.address]
-        if (backoff != null && System.currentTimeMillis() < backoff.retryAt) return
+        val address = device.address
+        if (connectionManager.isDeviceConnected(address)) return
+        if (pendingConnections.contains(address)) return
+        val now = System.currentTimeMillis()
+        val backoff = connectBackoff[address]
+        if (backoff != null && now < backoff.retryAt) return
 
         // 광고의 scan response에 실린 상대 peerId(BleGattServerManager.startAdvertising 참고).
-        // 못 읽으면(null) 주소만으로 판단하는 예전 동작 그대로.
+        // 못 읽으면 null — 그때는 연결한 뒤 직접 도착한 ANNOUNCE로 알게 된다(BleMeshManager).
         val peerIdHex = result.scanRecord
             ?.getServiceData(ParcelUuid(BleMeshConstants.SERVICE_UUID))
             ?.takeIf { it.size == BleMeshConstants.PEER_ID_SIZE }
             ?.toHex()
-        if (peerIdHex != null && clientPeerIds.containsValue(peerIdHex)) return // 주소만 바뀐 같은 기기
+        // 이미 주고받을 수 있는 링크가 있는 상대(상대가 걸어온 링크 포함)거나 연결 시도 중이면 또 걸지 않는다.
+        if (peerIdHex != null &&
+            (connectionManager.isPeerLinked(peerIdHex) || clientPeerIds.containsValue(peerIdHex))
+        ) return
 
+        val nurses = registeredNurses()
+        val evictable = findEvictableLink(nurses)
+        val decision = BleConnectPolicy.decide(
+            isRegisteredNurse = peerIdHex != null && peerIdHex in nurses,
+            linkCount = connectionManager.count() + pendingConnections.size,
+            maxLinks = BleMeshConstants.MAX_CONNECTIONS,
+            unlinkedNurseCount = nurses.count { it != peerIdHex && !connectionManager.isPeerLinked(it) && !clientPeerIds.containsValue(it) },
+            hasEvictable = evictable != null
+        )
+        when (decision) {
+            BleConnectPolicy.Decision.SKIP -> return
+            BleConnectPolicy.Decision.CONNECT_AFTER_EVICTING -> evictable?.let { evict(it) }
+            BleConnectPolicy.Decision.CONNECT -> {}
+        }
         connectToDevice(device, peerIdHex)
     }
 
+    /** 등록된 간호사에게 자리를 내주기 위해 끊어도 되는 링크 — 간호사가 아닌 것이 확인된 링크 우선, 오래된 순. */
+    private fun findEvictableLink(nurses: Set<String>): BleConnection? {
+        val others = connectionManager.all().filter { it.peerIdHex == null || it.peerIdHex !in nurses }
+        return others.filter { it.peerIdHex != null }.minByOrNull { it.connectedAt }
+            ?: others.minByOrNull { it.connectedAt }
+    }
+
+    @Suppress("MissingPermission")
+    private fun evict(conn: BleConnection) {
+        if (conn.isClient) {
+            try { conn.gatt?.disconnect() } catch (_: Exception) {}
+        } else {
+            evictServerLink(conn.address)
+        }
+    }
+
     /** 연결이 성립(서비스 탐색 완료)하기 전에 끝난 시도를 실패로 세고, 다음 재시도 시각을 늦춘다. */
-    private fun noteConnectFailure(address: String, status: Int) {
+    private fun noteConnectFailure(address: String, status: Int, isNurse: Boolean) {
         if (connectBackoff.size > 200) connectBackoff.clear() // 광고 주소가 계속 바뀌므로 무한정 쌓이지 않게
         val failures = (connectBackoff[address]?.failures ?: 0) + 1
+        val maxMs = if (isNurse) BleMeshConstants.CONNECT_RETRY_BACKOFF_MAX_NURSE_MS else BleMeshConstants.CONNECT_RETRY_BACKOFF_MAX_MS
         val delayMs = (BleMeshConstants.CONNECT_RETRY_BACKOFF_BASE_MS shl (failures - 1).coerceAtMost(4))
-            .coerceAtMost(BleMeshConstants.CONNECT_RETRY_BACKOFF_MAX_MS)
+            .coerceAtMost(maxMs)
         connectBackoff[address] = ConnectBackoff(failures, System.currentTimeMillis() + delayMs)
         if (failures == 1 || failures % 10 == 0) {
             DiagLog.log("BLE연결", "…${address.takeLast(5)} 연결 실패 ${failures}회 연속 (status=$status), ${delayMs / 1000}초 뒤 재시도")
@@ -279,10 +326,15 @@ class BleGattClientManager(
                     pendingConnections.remove(device.address)
                     openGatts.remove(device.address, gatt)
                     clientPeerIds.remove(device.address)
-                    if (established) connectBackoff.remove(device.address) else noteConnectFailure(device.address, status)
-                    // 자기(클라이언트) 항목만 지운다 — 같은 기기가 우리 GATT 서버에 따로 붙어 있는
-                    // 서버 항목까지 지우면 그 링크로는 더 이상 보내지 못한다(서버 쪽 가드와 대칭).
-                    if (connectionManager.get(device.address)?.isClient != false) {
+                    if (established) {
+                        connectBackoff.remove(device.address)
+                    } else {
+                        noteConnectFailure(device.address, status, isNurse = peerIdHex != null && peerIdHex in registeredNurses())
+                    }
+                    // 이 콜백의 링크가 등록해둔 항목일 때만 지운다. 같은 주소로 상대가 걸어온 서버 링크나,
+                    // 재시작 뒤 새로 맺은 링크를 뒤늦게 온 옛 콜백이 지우면 그 링크로 더는 못 보낸다.
+                    // (bitchat-android의 linkID 세대 확인과 같은 목적)
+                    if (connectionManager.get(device.address)?.gatt === gatt) {
                         connectionManager.remove(device.address)
                     }
                     delegate.onDeviceDisconnected(device.address)
@@ -296,7 +348,7 @@ class BleGattClientManager(
             override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     pendingConnections.remove(device.address)
-                    connectionManager.add(BleConnection(device.address, device, isClient = true, gatt = gatt))
+                    connectionManager.add(BleConnection(device.address, device, isClient = true, gatt = gatt, peerIdHex = peerIdHex))
                     try {
                         gatt.discoverServices()
                     } catch (e: Exception) {
@@ -364,7 +416,9 @@ class BleGattClientManager(
         pendingConnections.add(device.address)
         if (peerIdHex != null) clientPeerIds[device.address] = peerIdHex
         try {
-            val gatt = device.connectGatt(context, false, gattCallback)
+            // TRANSPORT_LE 고정: 지정하지 않으면 일부 기기가 일반 블루투스(BR/EDR)로 연결을 시도하다
+            // status 133으로 실패한다.
+            val gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
             if (gatt == null) {
                 pendingConnections.remove(device.address)
                 clientPeerIds.remove(device.address)

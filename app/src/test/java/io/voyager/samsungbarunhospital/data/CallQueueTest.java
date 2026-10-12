@@ -98,4 +98,24 @@ public class CallQueueTest {
         }
         return count;
     }
+
+    @Test
+    public void callResentAfterNurseConfirmedIsNotShownAgain() {
+        // 블루투스는 수신 확인을 못 받으면 같은 호출을 다시 보낸다 — 간호사가 이미 확인해서 지운 뒤에
+        // 그 재전송이 도착해도 새 호출처럼 다시 울리면 안 된다.
+        String id = UUID.randomUUID().toString();
+        assertTrue(CallQueue.getInstance().add(newCallItem(id, null, "peer")));
+        CallQueue.getInstance().markDone(id);
+
+        assertFalse(CallQueue.getInstance().add(newCallItem(id, null, "peer")));
+    }
+
+    @Test
+    public void callResentAfterPatientCancelledIsNotShownAgain() {
+        String id = UUID.randomUUID().toString();
+        assertTrue(CallQueue.getInstance().add(newCallItem(id, null, "peer")));
+        CallQueue.getInstance().cancelById(id);
+
+        assertFalse(CallQueue.getInstance().add(newCallItem(id, null, "peer")));
+    }
 }

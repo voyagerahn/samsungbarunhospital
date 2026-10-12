@@ -41,7 +41,38 @@ object BleMeshManager {
     private val connectionManager = BleConnectionManager()
     private val dedupCache = BleDedupCache()
     private val reassembler = BleFragmentation.Reassembler()
-    private val storeForward = BleStoreForwardCache()
+    // 수신 확인(ACK)을 기다리는 보낸 메시지들. stop()에서 비우지 않는다 — 블루투스를 껐다 켜거나
+    // 연결이 끊겼다 돌아온 뒤에도 이어서 보내야 하기 때문.
+    private val outbox = BleReliableOutbox()
+    private val outboxLock = Any()
+    private var outboxJob: Job? = null
+
+    // 중계한 호출·취소·확인응답의 messageId → 마지막으로 중계한 시각 (재전송분 중계의 빈도 제한용).
+    private val relayedAt = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean = size > 200
+    }
+
+    // 이미 처리한(화면에 반영한) 호출·취소·확인응답의 messageId → 처리 시각. 같은 메시지가 재전송으로
+    // 다시 오면 ACK만 돌려주고 두 번 처리하지 않는다.
+    private val delivered = object : LinkedHashMap<String, Long>(64, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
+            size > BleMeshConstants.DELIVERED_MEMORY_MAX
+    }
+
+    /** 보낸 호출이 간호사 태블릿에 도착했다는 확인을 받았을 때 알림(메인 스레드 아님 — UI는 호출부에서 넘길 것). */
+    interface DeliveryListener {
+        /** @param callId 전달이 확인된 호출의 id */
+        fun onCallDelivered(callId: String)
+        /** 끝내 전달을 확인받지 못하고 포기한 호출(기한 초과 등) — Wi-Fi 경로의 "전달 실패"에 해당. */
+        fun onCallUndelivered(callId: String)
+    }
+
+    @Volatile private var deliveryListener: DeliveryListener? = null
+
+    @JvmStatic
+    fun setDeliveryListener(listener: DeliveryListener?) {
+        deliveryListener = listener
+    }
     private var peerManager: BlePeerManager? = null
 
     private var serverManager: BleGattServerManager? = null
@@ -74,7 +105,7 @@ object BleMeshManager {
     @JvmStatic
     fun getConnectionCount(): Int = connectionManager.count()
 
-    /** 지금 실제로 데이터를 내보낼 수 있는 연결 수 — 0이면 보낸 호출은 보관됐다가 다시 연결될 때 나간다. */
+    /** 지금 실제로 데이터를 내보낼 수 있는 연결 수 — 0이면 보낸 호출은 다시 연결될 때까지 기다렸다 나간다. */
     @JvmStatic
     fun getWritableConnectionCount(): Int = connectionManager.writableCount()
 
@@ -112,7 +143,14 @@ object BleMeshManager {
                 // 콜백 스레드는 즉시 반환하게 한다.
                 mainScope.launch { handleRawBytes(bytes, fromAddress) }
             }
-            override fun onDeviceConnected(address: String) {}
+            override fun onDeviceConnected(address: String) {
+                // 링크가 준비되자마자 ANNOUNCE를 보낸다(bitchat과 동일). 30초 주기만 기다리면, 다시
+                // 연결된 뒤에도 서로 누구인지 알고 보관해둔 호출을 내보내기까지 최대 30초가 걸린다.
+                mainScope.launch {
+                    delay(200)
+                    sendPacket(buildAnnouncePacket(), excludeAddress = null)
+                }
+            }
             override fun onDeviceDisconnected(address: String) {}
         }
 
@@ -120,7 +158,11 @@ object BleMeshManager {
         peers.startCleanup()
         peerManager = peers
 
-        val client = BleGattClientManager(appContext, mainScope, connectionManager, transportDelegate)
+        val client = BleGattClientManager(
+            appContext, mainScope, connectionManager, transportDelegate,
+            registeredNurses = { registeredNursePeerIds() },
+            evictServerLink = { address -> serverManager?.disconnectDevice(address) }
+        )
         client.start()
         clientManager = client
 
@@ -132,6 +174,7 @@ object BleMeshManager {
 
         startAnnounceLoop()
         started = true
+        ensureOutboxLoop() // 꺼져 있는 동안 쌓인 메시지가 있으면 이어서 보낸다
     }
 
     @Synchronized
@@ -141,6 +184,10 @@ object BleMeshManager {
         started = false
         announceJob?.cancel()
         announceJob = null
+        synchronized(outboxLock) {
+            outboxJob?.cancel()
+            outboxJob = null
+        }
         peerManager?.stopCleanup()
         peerManager?.clear()
         peerManager = null
@@ -158,9 +205,13 @@ object BleMeshManager {
     //
     // CALL/CANCEL/CONFIRMED 전부 recipientPeerId를 BROADCAST가 아니라 특정 peerId로 지정해서
     // 보낸다(유니캐스트). 중간에 있는 기기들은 여전히 flood로 중계하지만(그래야 물리적으로 먼
-    // 목적지까지 닿음), addressedToMe가 아닌 기기는 자기 화면에 표시하지 않고 그냥 넘긴다 —
-    // 그래서 근처의 다른 환자 태블릿이 "나한테 온 호출"로 착각해 자기 화면에 알림을 띄우는
-    // 일이 없다(bitchat의 recipientID/isPacketAddressedToMe와 같은 패턴).
+    // 목적지까지 닿음 — 환자 → 환자 → 간호사), addressedToMe가 아닌 기기는 자기 화면에 표시하지
+    // 않고 그냥 넘긴다 — 그래서 최종 도착지는 항상 지정한 기기 하나뿐이고, 근처의 다른 환자 태블릿이
+    // "나한테 온 호출"로 착각해 알림을 띄우는 일이 없다(bitchat의 recipientID/isPacketAddressedToMe).
+    //
+    // 블루투스 경로는 Wi-Fi(TCP) 경로와 "통신 수단만 다르고 동작은 같아야" 한다(사용자 요구사항).
+    // TCP는 받는 쪽이 "ACK"를 돌려줘서 전달 여부를 아는데, 블루투스에도 같은 수신 확인(ACK 패킷)을
+    // 두고 확인이 올 때까지 다시 보낸다 — sendUnicast / BleReliableOutbox 참고.
 
     /**
      * 호출을 보낼 간호사 태블릿의 BLE peerId를 모르면 호출 못함 — peerId는 같은 Wi-Fi에서 TCP로
@@ -169,50 +220,46 @@ object BleMeshManager {
      */
     @JvmStatic
     fun sendCallToPeer(recipientPeerIdHex: String, payload: String) =
-        sendUnicast(BlePacketType.CALL, recipientPeerIdHex, payload, cacheIfOffline = false)
+        sendUnicast(BlePacketType.CALL, recipientPeerIdHex, payload)
 
     @JvmStatic
     fun sendCancelToPeer(recipientPeerIdHex: String, payload: String) =
-        sendUnicast(BlePacketType.CANCEL, recipientPeerIdHex, payload, cacheIfOffline = false)
+        sendUnicast(BlePacketType.CANCEL, recipientPeerIdHex, payload)
 
-    /** Sends a unicast CONFIRMED reply, or caches it via [BleStoreForwardCache] if the recipient is currently offline. */
+    /** Sends a unicast CONFIRMED reply (kept and resent later if the patient tablet isn't reachable right now). */
     @JvmStatic
     fun sendConfirmed(recipientPeerIdHex: String, payload: String) =
-        sendUnicast(BlePacketType.CONFIRMED, recipientPeerIdHex, payload, cacheIfOffline = true)
+        sendUnicast(BlePacketType.CONFIRMED, recipientPeerIdHex, payload)
 
     /**
-     * 보관 후 재전송(store-forward) 규칙:
-     * - [cacheIfOffline](CONFIRMED만 true): 받는 기기가 감지되지 않으면 보내지 않고 보관.
-     * - 그 외(CALL/CANCEL)도 **내보낼 수 있는 링크가 0개면** 보관한다 — 예전에는 그대로 버려서, 연결이
-     *   잠깐 끊긴 사이의 호출은 환자 화면에만 남고 간호사에게는 영영 안 갔다. 링크가 있는데 상대만
-     *   감지 안 될 때는 지금처럼 보내기만 한다(중계로 닿았을 수 있는데 나중에 또 보내면, 간호사가
-     *   이미 확인해서 지운 호출이 다시 뜰 수 있어서).
-     * - CANCEL은 아직 안 나간 같은 호출이 보관돼 있으면 그 CALL만 빼고 끝낸다(둘 다 안 보냄).
+     * 호출·취소·확인응답을 [recipientPeerIdHex]에게 "확인받을 때까지" 보낸다:
+     * - 닿을 수 있으면(직접 링크가 있거나 중계를 거쳐 최근에 감지됨) 바로 보내고, ACK가 올 때까지
+     *   간격을 늘려가며 다시 보낸다.
+     * - 닿을 수 없으면 버리지 않고 기다렸다가, 다시 닿는 순간 보낸다([pumpOutbox]가 1초마다 살핀다).
+     *   예전에는 그대로 버려서, 연결이 끊긴 사이의 호출은 환자 화면에만 남고 간호사에게는 영영 안 갔다.
+     * - CANCEL은, 같은 호출이 아직 한 번도 못 나갔으면 그 호출만 거두고 끝낸다(둘 다 안 보냄).
+     *   나간 적이 있으면 호출 재전송을 멈추고 CANCEL을 같은 방식으로 확인받을 때까지 보낸다.
      *
      * hexToByteArray()는 짝수 길이만 보장할 뿐 정확한 바이트 수는 보장하지 않으므로, 그 뒤 크기도
      * 검증한다 — 안 그러면 BlePacket 생성자의 require()가 던지는 예외를 호출부가 그대로 맞는다.
      */
-    private fun sendUnicast(type: BlePacketType, recipientPeerIdHex: String, payload: String, cacheIfOffline: Boolean) {
+    private fun sendUnicast(type: BlePacketType, recipientPeerIdHex: String, payload: String) {
         val what = describe(type, payload)
-        val to = recipientPeerIdHex.take(8)
-        if (!started) {
-            DiagLog.log("BLE송신", "$what → $to 못 보냄: BLE가 실행 중이 아님")
-            return
-        }
-        val recipient = recipientPeerIdHex.hexToByteArray()
+        val recipientHex = recipientPeerIdHex.lowercase()
+        val to = recipientHex.take(8)
+        val recipient = recipientHex.hexToByteArray()
         if (recipient == null || recipient.size != BleMeshConstants.PEER_ID_SIZE) {
             DiagLog.log("BLE송신", "$what 못 보냄: 받는 기기 ID 형식 오류($to)")
             return
         }
         val callId = callIdOf(type, payload)
-        if (type == BlePacketType.CANCEL && callId != null &&
-            storeForward.removeByKey(recipientPeerIdHex, pendingCallKey(callId))
-        ) {
-            DiagLog.log("BLE송신", "$what → $to 호출이 아직 못 나간 상태에서 취소됨 — 보관했던 호출을 지우고 둘 다 보내지 않음")
-            return
+        if (type == BlePacketType.CANCEL && callId != null) {
+            val pendingCalls = outbox.removeWhere { it == outboxKey(BlePacketType.CALL, callId, recipientHex) }
+            if (pendingCalls.isNotEmpty() && pendingCalls.all { it.attempts == 0 }) {
+                DiagLog.log("BLE송신", "$what → $to 호출이 아직 못 나간 상태에서 취소됨 — 호출을 거두고 둘 다 보내지 않음")
+                return
+            }
         }
-        val links = connectionManager.writableCount()
-        val online = peerManager?.isOnline(recipientPeerIdHex) == true
         val packet = BlePacket(
             type = type,
             ttl = BleMeshConstants.DEFAULT_TTL,
@@ -221,24 +268,140 @@ object BleMeshManager {
             messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
             payload = payload.toByteArray(Charsets.UTF_8)
         )
-        // 기록은 실패(가능성) 이벤트만 남긴다.
-        if (cacheIfOffline && !online) {
-            DiagLog.log("BLE송신", "$what → $to 받는 기기가 근처에서 감지되지 않아 보관 (감지되면 재전송, 최대 30분)")
-            storeForward.offer(packet)
-        } else if (links == 0) {
-            val keepMs = if (cacheIfOffline) BleMeshConstants.STORE_FORWARD_TIMEOUT_MS else BleMeshConstants.PENDING_CALL_TIMEOUT_MS
-            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: 블루투스로 연결된 기기가 0대 — 보관, 다시 연결되면 자동 재전송 (최대 ${keepMs / 60000}분)")
-            val key = if (type == BlePacketType.CALL && callId != null) pendingCallKey(callId) else null
-            storeForward.offer(packet, keepMs, key)
-        } else {
-            if (!online) {
-                DiagLog.log("BLE송신", "$what → $to 보냈지만 받는 기기가 근처에서 감지되지 않음 (연결된 기기 ${links}대를 거쳐 중계 시도)")
+        // 조각까지 한 번만 만들어 두고 재전송 때 똑같은 바이트를 다시 쓴다(BleReliableOutbox 주석 참고).
+        val frames = BleFragmentation.fragment(packet).map { it.encode() }
+        val dropped = outbox.add(packet.messageId.toHex(), recipientHex, frames, outboxKey(type, callId, recipientHex), what)
+        for (entry in dropped) giveUp(entry, "확인을 기다리는 메시지가 너무 많아 가장 오래된 것부터 포기")
+
+        // 기록은 실패 이벤트만 남긴다.
+        if (!started) {
+            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: BLE가 실행 중이 아님 — 블루투스가 켜지고 다시 연결되면 자동 전송")
+        } else if (!isReachable(recipientHex)) {
+            val reason = if (connectionManager.writableCount() == 0) "블루투스로 연결된 기기가 0대" else "받는 기기와 연결돼 있지 않고 근처에서도 감지되지 않음"
+            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: $reason — 다시 연결되면 자동 전송 (최대 ${BleMeshConstants.DELIVERY_TIMEOUT_MS / 60000}분)")
+        }
+        ensureOutboxLoop()
+    }
+
+    /** 호출 하나를 가리키는 표식. callId가 없는 메시지(CONFIRMED)는 서로 구분할 필요가 없어 종류만 쓴다. */
+    private fun outboxKey(type: BlePacketType, callId: String?, recipientHex: String) =
+        "${type.name}:${callId ?: "-"}@$recipientHex"
+
+    /**
+     * [callId] 호출을 더 보낼 필요가 없을 때(간호사가 확인함) 재전송을 멈춘다. ACK를 못 받은 채로 간호사의
+     * 확인응답만 도착한 경우에도, 이미 처리된 호출을 계속 다시 보내지 않게 한다.
+     */
+    @JvmStatic
+    fun stopCall(callId: String) {
+        outbox.removeWhere { it.startsWith("${BlePacketType.CALL.name}:$callId@") }
+    }
+
+    /** [peerIdHex]에게 지금 패킷이 닿을 수 있는지 — 직접 링크가 있거나, (중계 경유로) 최근에 감지됐고 내보낼 링크가 있음. */
+    private fun isReachable(peerIdHex: String): Boolean =
+        connectionManager.isPeerLinked(peerIdHex) ||
+            (peerManager?.isOnline(peerIdHex) == true && connectionManager.writableCount() > 0)
+
+    /**
+     * 확인을 기다리는 메시지가 있는 동안에만 도는 재전송 루프. 목록이 비면 스스로 끝나고, 다음 메시지가
+     * 들어올 때 다시 시작된다 — 보낼 것이 없을 때는 아무것도 돌지 않는다. BLE가 꺼지면([stop]) 멈추고,
+     * 다시 켜질 때([start]) 남은 것이 있으면 이어서 돈다.
+     */
+    private fun ensureOutboxLoop() {
+        synchronized(outboxLock) {
+            if (outboxJob != null || !started || outbox.isEmpty()) return
+            outboxJob = mainScope.launch {
+                while (true) {
+                    pumpOutbox()
+                    synchronized(outboxLock) {
+                        if (outbox.isEmpty() || !started) {
+                            outboxJob = null
+                            return@launch
+                        }
+                    }
+                    delay(BleMeshConstants.OUTBOX_TICK_MS)
+                }
             }
-            mainScope.launch { sendPacket(packet, excludeAddress = null) }
         }
     }
 
-    private fun pendingCallKey(callId: String) = "CALL:$callId"
+    private fun giveUp(entry: BleReliableOutbox.Entry, reason: String) {
+        DiagLog.log("BLE송신", "${entry.what} → ${entry.recipientHex.take(8)} 전달 실패: $reason (${entry.attempts}회 보냄)")
+        callIdOfKey(entry.key)?.let { deliveryListener?.onCallUndelivered(it) }
+    }
+
+    /** 호출(CALL) 항목의 표식에서 callId를 꺼낸다. 호출이 아니면 null. */
+    private fun callIdOfKey(key: String): String? {
+        if (!key.startsWith("${BlePacketType.CALL.name}:")) return null
+        return key.substringAfter(':').substringBefore('@').takeIf { it != "-" }
+    }
+
+    /** 기한이 지난 것은 정리하고, 지금 보낼 차례인 것을 내보낸다. (재전송 루프에서만 부른다) */
+    private suspend fun pumpOutbox() {
+        run {
+            for (expired in outbox.takeExpired()) {
+                giveUp(expired, "${BleMeshConstants.DELIVERY_TIMEOUT_MS / 60000}분 동안 수신 확인을 받지 못해 중단")
+            }
+            if (!started) return
+            for (entry in outbox.takeDue { isReachable(it) }) {
+                for (frame in entry.frames) {
+                    connectionManager.broadcast(frame, serverManager?.getGattServer(), serverManager?.getCharacteristic(), excludeAddress = null)
+                }
+                // 계속 확인이 안 오는 경우를 기록으로 남긴다(처음 몇 번은 정상 범위라 생략).
+                if (entry.attempts == 6 || (entry.attempts > 6 && entry.attempts % 30 == 0)) {
+                    DiagLog.log("BLE송신", "${entry.what} → ${entry.recipientHex.take(8)} ${entry.attempts}회 보냈지만 아직 수신 확인 없음 — 계속 재전송 중")
+                }
+            }
+        }
+    }
+
+    /** 받은 호출·취소·확인응답에 대한 수신 확인을 보낸 기기에게 돌려준다. */
+    private suspend fun sendAck(toPeerId: ByteArray, ackedMessageId: ByteArray) {
+        val ack = BlePacket(
+            type = BlePacketType.ACK,
+            ttl = BleMeshConstants.DEFAULT_TTL,
+            senderPeerId = myPeerId,
+            recipientPeerId = toPeerId,
+            messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
+            payload = ackedMessageId.toHex().toByteArray(Charsets.UTF_8)
+        )
+        sendPacket(ack, excludeAddress = null)
+    }
+
+    private fun onAckReceived(ackedMessageIdHex: String) {
+        val entry = outbox.ack(ackedMessageIdHex) ?: return
+        // 한 번에 안 된 경우만 기록한다(정상 전달은 기록하지 않는 원칙) — 끊겼다가 복구된 흔적이 된다.
+        if (entry.waitedUnreachable || entry.attempts > 3) {
+            DiagLog.log("BLE송신", "${entry.what} → ${entry.recipientHex.take(8)} 전달 확인됨 (${entry.attempts}회 보냄" +
+                (if (entry.waitedUnreachable) ", 연결이 돌아올 때까지 기다렸음" else "") + ")")
+        }
+        callIdOfKey(entry.key)?.let { deliveryListener?.onCallDelivered(it) }
+    }
+
+    private suspend fun relay(packet: BlePacket, fromAddress: String) {
+        val relayed = BlePacketRelay.decideRelay(packet, myPeerId) ?: return
+        connectionManager.broadcast(relayed.encode(), serverManager?.getGattServer(), serverManager?.getCharacteristic(), excludeAddress = fromAddress)
+    }
+
+    /** 같은 메시지를 너무 자주 중계하지 않도록 — 마지막 중계 후 충분히 지났으면 true(그리고 시각 갱신). */
+    private fun mayRelayAgain(messageIdHex: String): Boolean = synchronized(relayedAt) {
+        val now = System.currentTimeMillis()
+        val last = relayedAt[messageIdHex]
+        if (last != null && now - last < BleMeshConstants.RELAY_REPEAT_MIN_INTERVAL_MS) return false
+        relayedAt[messageIdHex] = now
+        true
+    }
+
+    /** 이미 처리한 메시지인지 확인하고, 아니면 처리한 것으로 기록한다. @return 처음 보는 메시지면 true */
+    private fun markDeliveredIfNew(messageIdHex: String): Boolean = synchronized(delivered) {
+        val now = System.currentTimeMillis()
+        delivered.entries.removeAll { now - it.value > BleMeshConstants.DELIVERED_MEMORY_MS }
+        if (delivered.containsKey(messageIdHex)) return false
+        delivered[messageIdHex] = now
+        true
+    }
+
+    private fun isControl(type: BlePacketType) =
+        type == BlePacketType.CALL || type == BlePacketType.CANCEL || type == BlePacketType.CONFIRMED
 
     /** payload에서 callId만 뽑는다 — CALL은 "이름|메시지|callId", CANCEL은 "CANCEL|callId". */
     private fun callIdOf(type: BlePacketType, payload: String): String? {
@@ -248,23 +411,6 @@ object BleMeshManager {
             BlePacketType.CANCEL -> parts.getOrNull(1)
             else -> null
         }?.trim()?.takeIf { it.isNotEmpty() }
-    }
-
-    /**
-     * [peerIdHex]에게 보관해둔 패킷을 내보낸다. 그 기기에서 온 패킷을 받을 때마다 불린다 — "오프라인→
-     * 온라인 전환" 때만 내보내면, 끊긴 지 1분 안에 다시 연결된 경우(아직 온라인으로 간주 중)에는 전환이
-     * 일어나지 않아 보관분이 만료될 때까지 안 나간다. 내보낼 링크가 아직 준비 안 됐으면 그대로 두고
-     * 다음 패킷(ANNOUNCE가 30초마다 옴) 때 다시 시도한다.
-     */
-    private fun flushPendingFor(peerIdHex: String) {
-        if (storeForward.pendingCountFor(peerIdHex) == 0) return
-        if (connectionManager.writableCount() == 0) return
-        val packets = storeForward.flushFor(peerIdHex)
-        if (packets.isEmpty()) return
-        DiagLog.log("BLE송신", "보관했던 ${packets.size}건을 ${peerIdHex.take(8)}에게 재전송 (다시 감지됨)")
-        mainScope.launch {
-            for (packet in packets) sendPacket(packet, excludeAddress = null)
-        }
     }
 
     /**
@@ -291,13 +437,43 @@ object BleMeshManager {
     private suspend fun handleRawBytes(bytes: ByteArray, fromAddress: String) {
         val packet = BlePacket.decode(bytes) ?: return
         if (packet.senderPeerId.contentEquals(myPeerId)) return // our own broadcast, echoed back by a relay
-        if (dedupCache.isDuplicate(packet.messageId.toHex())) return
+        val senderHex = packet.senderPeerId.toHex()
+
+        // 중계되지 않고(TTL이 그대로) 도착한 ANNOUNCE는 "이 링크 건너편이 이 기기"라는 뜻이다. 그 사실을
+        // 링크에 기록해 둬야 같은 상대에게 중복으로 연결하지 않고, 등록된 간호사와 직접 연결돼 있는지
+        // 판단할 수 있다(bitchat-android의 DirectLinkAnnouncementPolicy). 중복 검사보다 먼저 한다 —
+        // 같은 ANNOUNCE가 두 링크로 오면 나중 것은 중복으로 버려지는데, 그 링크도 기록은 해야 한다.
+        if (packet.type == BlePacketType.ANNOUNCE && packet.ttl == BleMeshConstants.DEFAULT_TTL) {
+            connectionManager.bindPeer(fromAddress, senderHex)
+        }
+        // 나에게 온 호출·취소·확인응답이면, 이미 받은 것의 재전송이더라도 수신 확인은 매번 돌려준다 —
+        // 앞서 보낸 확인이 중간에 사라졌을 수 있고, 확인을 못 받은 상대는 계속 다시 보내기 때문.
+        // 단, 이 기기가 아직 처리할 준비가 안 됐으면(수신 처리기 미등록) 확인을 보내지 않는다 — "받았다"고
+        // 답해놓고 버리면 상대는 전달된 줄 알고 멈춘다. 답하지 않으면 준비될 때까지 계속 다시 보내준다.
+        // 확인 전송은 따로 띄운다: 끊긴 링크의 쓰기 대기(최대 2초) 때문에 알람 표시가 늦어지면 안 된다.
+        val forMe = !packet.isBroadcast && packet.recipientPeerId.contentEquals(myPeerId)
+        val listener = receiveListener
+        if (forMe && isControl(packet.type) && listener != null) {
+            mainScope.launch { sendAck(packet.senderPeerId, packet.messageId) }
+        }
+
+        val messageIdHex = packet.messageId.toHex()
+        if (dedupCache.isDuplicate(messageIdHex)) {
+            // 이미 본 패킷은 원래 여기서 버린다(중계 폭주·순환 방지). 다만 호출·취소·확인응답의 재전송은
+            // 계속 중계해야 한다 — 안 그러면 환자 → 환자 → 간호사 경로에서 첫 번째가 중간에 사라졌을 때,
+            // 보낸 쪽이 아무리 다시 보내도 중간 태블릿이 "이미 본 것"이라며 막아 간호사에게 닿지 못한다.
+            // 순환은 TTL(홉마다 감소)과 빈도 제한으로 막는다.
+            if (!forMe && isControl(packet.type) && mayRelayAgain(messageIdHex)) relay(packet, fromAddress)
+            // 나에게 온 것의 재전송: 처음 왔을 때 처리하지 못했다면(수신 처리기 미등록 등) 지금 처리한다.
+            // 이미 처리한 것이면 deliverControl이 걸러낸다.
+            if (forMe && isControl(packet.type)) deliverControl(packet, senderHex, listener, logIfUnready = false)
+            return
+        }
 
         lastActivityAtMs = System.currentTimeMillis()
-        val senderHex = packet.senderPeerId.toHex()
         peerManager?.markSeen(senderHex)
-        flushPendingFor(senderHex)
 
+        if (isControl(packet.type)) mayRelayAgain(messageIdHex) // 첫 중계 시각 기록
         BlePacketRelay.decideRelay(packet, myPeerId)?.let { relayed ->
             connectionManager.broadcast(
                 relayed.encode(),
@@ -323,18 +499,36 @@ object BleMeshManager {
 
         val addressedToMe = effective.isBroadcast || effective.recipientPeerId.contentEquals(myPeerId)
         val payloadText = String(effective.payload, Charsets.UTF_8)
-        val what = describe(effective.type, payloadText)
         if (!addressedToMe) return // 다른 기기 앞 — 중계만 하고 표시 안 함(정상)
-        val listener = receiveListener
-        if (listener == null) {
-            DiagLog.log("BLE수신", "$what 받았지만 버려짐: 수신 처리기 미등록 (보낸 기기 ${senderHex.take(8)})")
+
+        if (effective.type == BlePacketType.ACK) {
+            onAckReceived(payloadText.trim())
             return
         }
+        if (!isControl(effective.type)) return
+        // 조각으로 나뉘어 온 경우는 위(조각 단위)에서 확인을 못 보냈으니 여기서 보낸다.
+        if (packet.type == BlePacketType.FRAGMENT && listener != null) {
+            mainScope.launch { sendAck(effective.senderPeerId, effective.messageId) }
+        }
+        deliverControl(effective, senderHex, listener, logIfUnready = true)
+    }
+
+    /** 나에게 온 호출·취소·확인응답을 화면 쪽(수신 처리기)으로 넘긴다 — 같은 메시지는 한 번만. */
+    private fun deliverControl(effective: BlePacket, senderHex: String, listener: ReceiveListener?, logIfUnready: Boolean) {
+        val payloadText = String(effective.payload, Charsets.UTF_8)
+        if (listener == null) {
+            if (logIfUnready) {
+                DiagLog.log("BLE수신", "${describe(effective.type, payloadText)} 받았지만 아직 처리 못함: 수신 처리기 미등록 — 수신 확인을 보내지 않았으므로 상대가 다시 보냄 (보낸 기기 ${senderHex.take(8)})")
+            }
+            return
+        }
+        // 일반 중복 검사 창(5분)을 넘겨 다시 온 재전송도 한 번만 처리한다.
+        if (!markDeliveredIfNew(effective.messageId.toHex())) return
         listener.onPayloadReceived(payloadText, senderHex)
     }
 
     private fun onPeerCameOnline(peerIdHex: String) {
-        flushPendingFor(peerIdHex)
+        // 기다리던 메시지는 재전송 루프(1초 주기)가 곧 내보낸다 — 여기서 따로 할 일은 없다.
     }
 
     private fun buildAnnouncePacket(): BlePacket {
@@ -376,6 +570,7 @@ object BleMeshManager {
             BlePacketType.CALL -> "호출 #${parts.getOrNull(2)?.take(8) ?: "-"}"
             BlePacketType.CANCEL -> "취소 #${parts.getOrNull(1)?.take(8) ?: "-"}"
             BlePacketType.CONFIRMED -> "확인응답"
+            BlePacketType.ACK -> "수신확인"
             else -> type.name
         }
     }
@@ -399,7 +594,37 @@ object BleMeshManager {
     }
 
     @JvmStatic
-    fun isPeerOnline(peerIdHex: String): Boolean = peerManager?.isOnline(peerIdHex) == true
+    fun isPeerOnline(peerIdHex: String): Boolean = peerManager?.isOnline(peerIdHex.lowercase()) == true
+
+    /** [peerIdHex]와 직접(다른 기기를 거치지 않고) 주고받을 수 있는 링크가 있는지. */
+    @JvmStatic
+    fun isPeerDirectlyLinked(peerIdHex: String): Boolean = connectionManager.isPeerLinked(peerIdHex.lowercase())
+
+    /** [peerIdHex]에게 지금 호출이 바로 나갈 수 있는지(아니면 다시 닿을 때까지 기다렸다 나간다). */
+    @JvmStatic
+    fun isPeerReachable(peerIdHex: String): Boolean = isReachable(peerIdHex.lowercase())
+
+    /** 수신 확인을 기다리며 재전송 중인 메시지 수(진단용). */
+    @JvmStatic
+    fun getPendingDeliveryCount(): Int = outbox.size()
+
+    // 이 기기에 등록된 간호사 태블릿들의 peerId. 스캔 결과마다 참조되므로(초당 여러 번) 설정 저장소를
+    // 매번 읽지 않고 잠깐 캐시한다 — 관리자가 등록을 바꾸면 수 초 안에 반영된다.
+    private const val NURSE_CACHE_MS = 5_000L
+    @Volatile private var nurseCache: Set<String> = emptySet()
+    @Volatile private var nurseCachedAt = 0L
+
+    private fun registeredNursePeerIds(): Set<String> {
+        val ctx = appContext ?: return emptySet()
+        val now = System.currentTimeMillis()
+        if (now - nurseCachedAt < NURSE_CACHE_MS) return nurseCache
+        val ids = HashSet<String>()
+        for (nurse in AppSettings.getBleOnlyNurses(ctx)) ids.add(nurse.peerId.lowercase())
+        for (ip in AppSettings.getNurseIps(ctx)) AppSettings.getNursePeerId(ctx, ip)?.let { ids.add(it.lowercase()) }
+        nurseCache = ids
+        nurseCachedAt = now
+        return ids
+    }
 
     @JvmStatic
     fun getMyPeerIdHex(): String = myPeerId.toHex()
