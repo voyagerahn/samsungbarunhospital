@@ -18,6 +18,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import io.voyager.samsungbarunhospital.data.DiagLog
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -52,6 +53,8 @@ class BleGattServerManager(
     private var advertiseRetryCount = 0
     @Volatile private var isActive = false
     @Volatile private var advertising = false
+    @Volatile private var advertisingStartedAt = 0L
+    private var healthJob: Job? = null
 
     fun isAdvertising(): Boolean = advertising
 
@@ -75,6 +78,23 @@ class BleGattServerManager(
             delay(300)
             startAdvertising()
         }
+        // 연결이 하나도 없는 채로 오래 있으면 광고를 새로 시작한다 — 일부 기기에서 광고가 오류 콜백
+        // 없이 멈추는 경우가 있어, 그러면 상대가 이 기기를 다시 찾지 못한 채 연결 0대로 남는다.
+        healthJob?.cancel()
+        healthJob = scope.launch {
+            while (true) {
+                delay(BleMeshConstants.SCAN_HEALTH_CHECK_INTERVAL_MS)
+                if (!isActive) break
+                val alone = connectionManager.count() == 0
+                val age = System.currentTimeMillis() - advertisingStartedAt
+                if (advertising && alone && age >= BleMeshConstants.ADVERTISE_REFRESH_WHEN_ALONE_MS) {
+                    stopAdvertising()
+                    advertising = false
+                    delay(500)
+                    startAdvertising()
+                }
+            }
+        }
         return true
     }
 
@@ -82,6 +102,8 @@ class BleGattServerManager(
     fun stop() {
         isActive = false
         advertising = false
+        healthJob?.cancel()
+        healthJob = null
         stopAdvertising()
         try {
             connectionManager.all().filter { !it.isClient }.forEach { gattServer?.cancelConnection(it.device) }
@@ -242,6 +264,7 @@ class BleGattServerManager(
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
                 advertiseRetryCount = 0
                 advertising = true
+                advertisingStartedAt = System.currentTimeMillis()
                 Log.i(TAG, "Advertising started")
             }
 

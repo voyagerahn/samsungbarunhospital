@@ -17,6 +17,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import io.voyager.samsungbarunhospital.data.DiagLog
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -28,8 +29,13 @@ import kotlinx.coroutines.launch
  *
  * Adapted from bitchat-android's BluetoothGattClientManager
  * (app/src/main/java/com/bitchat/android/mesh/BluetoothGattClientManager.kt): dropped RSSI
- * monitoring, duty-cycling and scan-rate self-healing watchdogs — kept MTU negotiation and a
- * simple backoff retry on scan failure.
+ * monitoring and duty-cycling — kept MTU negotiation and backoff retry on scan failure.
+ *
+ * Self-healing (added after a field report of "works after boot, then 0 connections until
+ * reboot"): the scan is restarted periodically ([refreshScanIfDue]) because Android silently stops
+ * delivering results for a scan left running for 30+ minutes, which made a dropped link
+ * unrecoverable; connection attempts back off per address; and a peer already linked under one
+ * BLE address isn't connected again when its (rotating) advertising address changes.
  */
 class BleGattClientManager(
     private val context: Context,
@@ -48,7 +54,24 @@ class BleGattClientManager(
     private var scanCallback: ScanCallback? = null
     @Volatile private var isActive = false
     @Volatile private var isScanning = false
-    private var scanRetryCount = 0
+    @Volatile private var scanStartedAt = 0L
+    private var healthJob: Job? = null
+
+    // 연속 스캔 실패 횟수. startScan()이 예외 없이 반환해도 실패는 나중에 onScanFailed로 오므로,
+    // 거기서 0으로 되돌리면 안 된다(그러면 재시도 간격이 영영 안 늘어나 3초마다 반복되고, Android의
+    // "30초에 5회" 제한에 걸려 오히려 복구가 늦어진다). 스캔 결과가 실제로 오거나 스캔이 한동안
+    // 살아있을 때만 0으로 되돌린다.
+    @Volatile private var scanFailureStreak = 0
+
+    fun scanFailureStreak(): Int = scanFailureStreak
+
+    private class ConnectBackoff(val failures: Int, val retryAt: Long)
+    private val connectBackoff = java.util.concurrent.ConcurrentHashMap<String, ConnectBackoff>() // key = address
+
+    // 클라이언트로 연결했거나 연결 중인 주소 → 그 기기의 peerId(광고의 service data에서 읽음).
+    // Android는 광고 주소를 주기적으로 바꾸기 때문에, 주소만 보고 판단하면 이미 연결된 같은 태블릿에
+    // 새 주소로 또 연결해 링크가 중복으로 쌓인다(연결 상한을 같은 기기가 다 채움).
+    private val clientPeerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // connectGatt()를 호출했지만 아직 connectionManager에 등록되지 않은(MTU 협상 중인) 주소.
     // 이게 없으면 같은 기기의 반복되는 스캔 결과가 그 창(window) 동안 connectToDevice()를
@@ -74,14 +97,26 @@ class BleGattClientManager(
         }
         isActive = true
         startScanning()
+        healthJob?.cancel()
+        healthJob = scope.launch {
+            while (true) {
+                delay(BleMeshConstants.SCAN_HEALTH_CHECK_INTERVAL_MS)
+                if (!this@BleGattClientManager.isActive) break
+                refreshScanIfDue()
+            }
+        }
         return true
     }
 
     @Suppress("MissingPermission")
     fun stop() {
         isActive = false
+        healthJob?.cancel()
+        healthJob = null
         stopScanning()
         pendingConnections.clear()
+        clientPeerIds.clear()
+        connectBackoff.clear()
         for (gatt in openGatts.values) {
             try { gatt.disconnect() } catch (_: Exception) {}
             try { gatt.close() } catch (_: Exception) {}
@@ -89,6 +124,29 @@ class BleGattClientManager(
         openGatts.clear()
     }
 
+    /**
+     * 스캔을 주기적으로 새로 시작한다. 이유는 [BleMeshConstants.SCAN_REFRESH_INTERVAL_MS] 주석 참고 —
+     * 한 번 시작하고 내버려둔 스캔은 30분 뒤부터 결과를 주지 않아, 끊긴 상대를 재부팅 전까지 못 찾는다.
+     */
+    private suspend fun refreshScanIfDue() {
+        if (!isScanning) {
+            // 실패 후 재시도 대기 중이거나, 재시도가 어떤 이유로 끊긴 상태 — 직접 다시 건다.
+            startScanning()
+            return
+        }
+        val age = System.currentTimeMillis() - scanStartedAt
+        // 실패는 startScan 직후 onScanFailed로 오므로, 30초 넘게 살아있으면 정상 동작으로 본다.
+        if (age >= 30_000L) scanFailureStreak = 0
+        val alone = connectionManager.count() == 0
+        val due = age >= BleMeshConstants.SCAN_REFRESH_INTERVAL_MS ||
+            (alone && age >= BleMeshConstants.SCAN_REFRESH_WHEN_ALONE_MS)
+        if (!due) return
+        stopScanning()
+        delay(1000)
+        startScanning()
+    }
+
+    @Synchronized
     @Suppress("MissingPermission")
     private fun startScanning() {
         if (!isActive || isScanning || !BlePermissions.hasAll(context) || scanner == null) return
@@ -107,8 +165,12 @@ class BleGattClientManager(
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "Scan failed: $errorCode")
-                DiagLog.log("BLE검색", "주변 기기 검색 실패: 오류코드 $errorCode, 잠시 후 재시도")
                 isScanning = false
+                val streak = ++scanFailureStreak
+                // 같은 실패가 몇 초마다 반복되므로 처음과 이후 10회마다만 기록한다.
+                if (streak == 1 || streak % 10 == 0) {
+                    DiagLog.log("BLE검색", "주변 기기 검색 실패 ${streak}회 연속: 오류코드 $errorCode (${scanErrorText(errorCode)}), 간격을 늘려가며 재시도")
+                }
                 scheduleScanRestart()
             }
         }
@@ -116,14 +178,29 @@ class BleGattClientManager(
         try {
             scanner.startScan(listOf(filter), settings, scanCallback)
             isScanning = true
-            scanRetryCount = 0
+            scanStartedAt = System.currentTimeMillis()
         } catch (e: Exception) {
             Log.e(TAG, "Exception starting scan: ${e.message}")
-            DiagLog.log("BLE검색", "검색 시작 중 오류: ${e.message}")
             isScanning = false
+            val streak = ++scanFailureStreak
+            if (streak == 1 || streak % 10 == 0) {
+                DiagLog.log("BLE검색", "검색 시작 중 오류 ${streak}회 연속: ${e.message}")
+            }
+            scheduleScanRestart()
         }
     }
 
+    private fun scanErrorText(code: Int): String = when (code) {
+        ScanCallback.SCAN_FAILED_ALREADY_STARTED -> "이미 검색 중"
+        ScanCallback.SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "블루투스 내부 등록 실패 — 계속되면 블루투스를 껐다 켜야 함"
+        ScanCallback.SCAN_FAILED_INTERNAL_ERROR -> "블루투스 내부 오류"
+        ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED -> "기기가 지원하지 않음"
+        5 -> "블루투스 자원 부족"
+        6 -> "검색을 너무 자주 시작함"
+        else -> "알 수 없음"
+    }
+
+    @Synchronized
     @Suppress("MissingPermission")
     private fun stopScanning() {
         if (!isScanning || !BlePermissions.hasAll(context) || scanner == null) return
@@ -136,8 +213,7 @@ class BleGattClientManager(
     }
 
     private fun scheduleScanRestart() {
-        scanRetryCount++
-        val delayMs = (BleMeshConstants.SCAN_RESTART_BACKOFF_BASE_MS * scanRetryCount)
+        val delayMs = (BleMeshConstants.SCAN_RESTART_BACKOFF_BASE_MS * scanFailureStreak.coerceAtLeast(1))
             .coerceAtMost(BleMeshConstants.SCAN_RESTART_BACKOFF_MAX_MS)
         scope.launch {
             delay(delayMs)
@@ -147,16 +223,43 @@ class BleGattClientManager(
 
     @Suppress("MissingPermission")
     private fun handleScanResult(result: ScanResult) {
+        scanFailureStreak = 0
         val device = result.device
         if (connectionManager.isDeviceConnected(device.address)) return
         if (pendingConnections.contains(device.address)) return
         if (connectionManager.isFull()) return
-        connectToDevice(device)
+        val backoff = connectBackoff[device.address]
+        if (backoff != null && System.currentTimeMillis() < backoff.retryAt) return
+
+        // 광고의 scan response에 실린 상대 peerId(BleGattServerManager.startAdvertising 참고).
+        // 못 읽으면(null) 주소만으로 판단하는 예전 동작 그대로.
+        val peerIdHex = result.scanRecord
+            ?.getServiceData(ParcelUuid(BleMeshConstants.SERVICE_UUID))
+            ?.takeIf { it.size == BleMeshConstants.PEER_ID_SIZE }
+            ?.toHex()
+        if (peerIdHex != null && clientPeerIds.containsValue(peerIdHex)) return // 주소만 바뀐 같은 기기
+
+        connectToDevice(device, peerIdHex)
+    }
+
+    /** 연결이 성립(서비스 탐색 완료)하기 전에 끝난 시도를 실패로 세고, 다음 재시도 시각을 늦춘다. */
+    private fun noteConnectFailure(address: String, status: Int) {
+        if (connectBackoff.size > 200) connectBackoff.clear() // 광고 주소가 계속 바뀌므로 무한정 쌓이지 않게
+        val failures = (connectBackoff[address]?.failures ?: 0) + 1
+        val delayMs = (BleMeshConstants.CONNECT_RETRY_BACKOFF_BASE_MS shl (failures - 1).coerceAtMost(4))
+            .coerceAtMost(BleMeshConstants.CONNECT_RETRY_BACKOFF_MAX_MS)
+        connectBackoff[address] = ConnectBackoff(failures, System.currentTimeMillis() + delayMs)
+        if (failures == 1 || failures % 10 == 0) {
+            DiagLog.log("BLE연결", "…${address.takeLast(5)} 연결 실패 ${failures}회 연속 (status=$status), ${delayMs / 1000}초 뒤 재시도")
+        }
     }
 
     @Suppress("MissingPermission", "DEPRECATION")
-    private fun connectToDevice(device: BluetoothDevice) {
+    private fun connectToDevice(device: BluetoothDevice, peerIdHex: String?) {
         val gattCallback = object : BluetoothGattCallback() {
+            // 서비스 탐색까지 끝나 실제로 주고받을 수 있게 된 적이 있는지 — 실패 횟수 집계용.
+            @Volatile var established = false
+
             override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                 if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                     scope.launch {
@@ -175,6 +278,8 @@ class BleGattClientManager(
                     }
                     pendingConnections.remove(device.address)
                     openGatts.remove(device.address, gatt)
+                    clientPeerIds.remove(device.address)
+                    if (established) connectBackoff.remove(device.address) else noteConnectFailure(device.address, status)
                     // 자기(클라이언트) 항목만 지운다 — 같은 기기가 우리 GATT 서버에 따로 붙어 있는
                     // 서버 항목까지 지우면 그 링크로는 더 이상 보내지 못한다(서버 쪽 가드와 대칭).
                     if (connectionManager.get(device.address)?.isClient != false) {
@@ -233,6 +338,8 @@ class BleGattClientManager(
                 }
                 cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(cccd)
+                established = true
+                connectBackoff.remove(device.address)
 
                 scope.launch {
                     delay(200)
@@ -255,19 +362,23 @@ class BleGattClientManager(
         }
 
         pendingConnections.add(device.address)
+        if (peerIdHex != null) clientPeerIds[device.address] = peerIdHex
         try {
             val gatt = device.connectGatt(context, false, gattCallback)
             if (gatt == null) {
                 pendingConnections.remove(device.address)
+                clientPeerIds.remove(device.address)
             } else if (!isActive) {
                 // stop()과 경합 — 이미 정리가 끝났으면 방금 연 핸들도 바로 닫는다.
                 pendingConnections.remove(device.address)
+                clientPeerIds.remove(device.address)
                 try { gatt.close() } catch (_: Exception) {}
             } else {
                 openGatts[device.address] = gatt
             }
         } catch (e: Exception) {
             pendingConnections.remove(device.address)
+            clientPeerIds.remove(device.address)
             Log.e(TAG, "Exception connecting to ${device.address}: ${e.message}")
             DiagLog.log("BLE연결", "…${device.address.takeLast(5)} 연결 시도 오류: ${e.message}")
         }

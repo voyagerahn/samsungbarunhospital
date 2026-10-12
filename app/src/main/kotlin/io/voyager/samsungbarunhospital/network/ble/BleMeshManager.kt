@@ -74,6 +74,14 @@ object BleMeshManager {
     @JvmStatic
     fun getConnectionCount(): Int = connectionManager.count()
 
+    /** 지금 실제로 데이터를 내보낼 수 있는 연결 수 — 0이면 보낸 호출은 보관됐다가 다시 연결될 때 나간다. */
+    @JvmStatic
+    fun getWritableConnectionCount(): Int = connectionManager.writableCount()
+
+    /** 주변 기기 검색이 연속으로 몇 번 실패했는지(정상이면 0). */
+    @JvmStatic
+    fun getScanFailureStreak(): Int = clientManager?.scanFailureStreak() ?: 0
+
     /** Epoch ms of the last valid packet seen from another device, or 0 if none yet this session. */
     @JvmStatic
     fun getLastActivityAtMs(): Long = lastActivityAtMs
@@ -173,10 +181,16 @@ object BleMeshManager {
         sendUnicast(BlePacketType.CONFIRMED, recipientPeerIdHex, payload, cacheIfOffline = true)
 
     /**
-     * @param cacheIfOffline CONFIRMED만 true — CALL/CANCEL은 store-forward 대상이 아니다(그
-     * 순간 도달 못하면 흘려보냄, CLAUDE.md의 "알려진 한계" 참고). hexToByteArray()는 짝수 길이만
-     * 보장할 뿐 정확한 바이트 수는 보장하지 않으므로, 그 뒤 크기도 검증한다 — 안 그러면 아래
-     * BlePacket 생성자의 require()가 던지는 예외를 "조용한 no-op"을 기대하는 호출부가 그대로 맞는다.
+     * 보관 후 재전송(store-forward) 규칙:
+     * - [cacheIfOffline](CONFIRMED만 true): 받는 기기가 감지되지 않으면 보내지 않고 보관.
+     * - 그 외(CALL/CANCEL)도 **내보낼 수 있는 링크가 0개면** 보관한다 — 예전에는 그대로 버려서, 연결이
+     *   잠깐 끊긴 사이의 호출은 환자 화면에만 남고 간호사에게는 영영 안 갔다. 링크가 있는데 상대만
+     *   감지 안 될 때는 지금처럼 보내기만 한다(중계로 닿았을 수 있는데 나중에 또 보내면, 간호사가
+     *   이미 확인해서 지운 호출이 다시 뜰 수 있어서).
+     * - CANCEL은 아직 안 나간 같은 호출이 보관돼 있으면 그 CALL만 빼고 끝낸다(둘 다 안 보냄).
+     *
+     * hexToByteArray()는 짝수 길이만 보장할 뿐 정확한 바이트 수는 보장하지 않으므로, 그 뒤 크기도
+     * 검증한다 — 안 그러면 BlePacket 생성자의 require()가 던지는 예외를 호출부가 그대로 맞는다.
      */
     private fun sendUnicast(type: BlePacketType, recipientPeerIdHex: String, payload: String, cacheIfOffline: Boolean) {
         val what = describe(type, payload)
@@ -190,16 +204,15 @@ object BleMeshManager {
             DiagLog.log("BLE송신", "$what 못 보냄: 받는 기기 ID 형식 오류($to)")
             return
         }
-        val links = connectionManager.count()
-        val online = peerManager?.isOnline(recipientPeerIdHex) == true
-        // 실패(가능성) 이벤트만: 연결 0대면 실제로 아무 데도 안 나가고, 상대가 감지 안 되면 닿을 가능성이 낮다.
-        if (cacheIfOffline && !online) {
-            DiagLog.log("BLE송신", "$what → $to 받는 기기가 근처에서 감지되지 않아 보관 (감지되면 재전송, 최대 30분)")
-        } else if (links == 0) {
-            DiagLog.log("BLE송신", "$what → $to 실제로 안 나감: 블루투스로 연결된 기기가 0대")
-        } else if (!online) {
-            DiagLog.log("BLE송신", "$what → $to 보냈지만 받는 기기가 근처에서 감지되지 않음 (연결된 기기 ${links}대를 거쳐 중계 시도)")
+        val callId = callIdOf(type, payload)
+        if (type == BlePacketType.CANCEL && callId != null &&
+            storeForward.removeByKey(recipientPeerIdHex, pendingCallKey(callId))
+        ) {
+            DiagLog.log("BLE송신", "$what → $to 호출이 아직 못 나간 상태에서 취소됨 — 보관했던 호출을 지우고 둘 다 보내지 않음")
+            return
         }
+        val links = connectionManager.writableCount()
+        val online = peerManager?.isOnline(recipientPeerIdHex) == true
         val packet = BlePacket(
             type = type,
             ttl = BleMeshConstants.DEFAULT_TTL,
@@ -208,10 +221,49 @@ object BleMeshManager {
             messageId = randomBytes(BleMeshConstants.MESSAGE_ID_SIZE),
             payload = payload.toByteArray(Charsets.UTF_8)
         )
+        // 기록은 실패(가능성) 이벤트만 남긴다.
         if (cacheIfOffline && !online) {
+            DiagLog.log("BLE송신", "$what → $to 받는 기기가 근처에서 감지되지 않아 보관 (감지되면 재전송, 최대 30분)")
             storeForward.offer(packet)
+        } else if (links == 0) {
+            val keepMs = if (cacheIfOffline) BleMeshConstants.STORE_FORWARD_TIMEOUT_MS else BleMeshConstants.PENDING_CALL_TIMEOUT_MS
+            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: 블루투스로 연결된 기기가 0대 — 보관, 다시 연결되면 자동 재전송 (최대 ${keepMs / 60000}분)")
+            val key = if (type == BlePacketType.CALL && callId != null) pendingCallKey(callId) else null
+            storeForward.offer(packet, keepMs, key)
         } else {
+            if (!online) {
+                DiagLog.log("BLE송신", "$what → $to 보냈지만 받는 기기가 근처에서 감지되지 않음 (연결된 기기 ${links}대를 거쳐 중계 시도)")
+            }
             mainScope.launch { sendPacket(packet, excludeAddress = null) }
+        }
+    }
+
+    private fun pendingCallKey(callId: String) = "CALL:$callId"
+
+    /** payload에서 callId만 뽑는다 — CALL은 "이름|메시지|callId", CANCEL은 "CANCEL|callId". */
+    private fun callIdOf(type: BlePacketType, payload: String): String? {
+        val parts = payload.split("|")
+        return when (type) {
+            BlePacketType.CALL -> parts.getOrNull(2)
+            BlePacketType.CANCEL -> parts.getOrNull(1)
+            else -> null
+        }?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * [peerIdHex]에게 보관해둔 패킷을 내보낸다. 그 기기에서 온 패킷을 받을 때마다 불린다 — "오프라인→
+     * 온라인 전환" 때만 내보내면, 끊긴 지 1분 안에 다시 연결된 경우(아직 온라인으로 간주 중)에는 전환이
+     * 일어나지 않아 보관분이 만료될 때까지 안 나간다. 내보낼 링크가 아직 준비 안 됐으면 그대로 두고
+     * 다음 패킷(ANNOUNCE가 30초마다 옴) 때 다시 시도한다.
+     */
+    private fun flushPendingFor(peerIdHex: String) {
+        if (storeForward.pendingCountFor(peerIdHex) == 0) return
+        if (connectionManager.writableCount() == 0) return
+        val packets = storeForward.flushFor(peerIdHex)
+        if (packets.isEmpty()) return
+        DiagLog.log("BLE송신", "보관했던 ${packets.size}건을 ${peerIdHex.take(8)}에게 재전송 (다시 감지됨)")
+        mainScope.launch {
+            for (packet in packets) sendPacket(packet, excludeAddress = null)
         }
     }
 
@@ -244,6 +296,7 @@ object BleMeshManager {
         lastActivityAtMs = System.currentTimeMillis()
         val senderHex = packet.senderPeerId.toHex()
         peerManager?.markSeen(senderHex)
+        flushPendingFor(senderHex)
 
         BlePacketRelay.decideRelay(packet, myPeerId)?.let { relayed ->
             connectionManager.broadcast(
@@ -281,13 +334,7 @@ object BleMeshManager {
     }
 
     private fun onPeerCameOnline(peerIdHex: String) {
-        // BlePeerManager.markSeen()이 이 콜백을 동기 호출하므로, 여기서 직접 suspend
-        // sendPacket을 부르는 대신 코루틴으로 넘긴다.
-        mainScope.launch {
-            for (packet in storeForward.flushFor(peerIdHex)) {
-                sendPacket(packet, excludeAddress = null)
-            }
-        }
+        flushPendingFor(peerIdHex)
     }
 
     private fun buildAnnouncePacket(): BlePacket {

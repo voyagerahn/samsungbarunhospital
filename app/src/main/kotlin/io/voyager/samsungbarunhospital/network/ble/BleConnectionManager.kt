@@ -73,6 +73,15 @@ class BleConnectionManager {
 
     fun count(): Int = connections.size
 
+    /**
+     * 지금 실제로 데이터를 내보낼 수 있는 링크 수. 연결 직후에는 아직 서비스 탐색(클라이언트)이나
+     * 구독(서버)이 안 끝나 [broadcast]가 그 링크를 조용히 건너뛰므로, "보낼 수 있는가"는 [count]가
+     * 아니라 이 값으로 판단해야 한다.
+     */
+    fun writableCount(): Int = connections.values.count {
+        if (it.isClient) it.gatt != null && it.writeCharacteristic != null else it.subscribed
+    }
+
     fun isFull(): Boolean = connections.size >= BleMeshConstants.MAX_CONNECTIONS
 
     fun isDeviceConnected(address: String): Boolean = connections.containsKey(address)

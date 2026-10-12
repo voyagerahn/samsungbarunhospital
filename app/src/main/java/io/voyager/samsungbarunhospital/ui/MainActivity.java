@@ -384,6 +384,10 @@ public class MainActivity extends AppCompatActivity {
     private void reportCallResult(String callId, String message, boolean tcpSuccess, int bleSentCount) {
         if (tcpSuccess) {
             Toast.makeText(this, "✓ 간호사에게 전달되었습니다.", Toast.LENGTH_SHORT).show();
+        } else if (bleSentCount > 0 && BleMeshManager.getWritableConnectionCount() == 0) {
+            // 지금은 블루투스 링크가 없어 실제로는 못 나갔고, BleMeshManager가 보관했다가 간호사 태블릿이
+            // 다시 감지되면 자동으로 보낸다(PENDING_CALL_TIMEOUT_MS). "보냈다"고 하면 사실과 다르다.
+            Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n다시 연결되면 자동으로 전달합니다 (10분 이내).", Toast.LENGTH_LONG).show();
         } else if (bleSentCount > 0) {
             Toast.makeText(this, "블루투스로 호출했습니다.\n간호사 확인 시 '호출 완료'로 바뀝니다.", Toast.LENGTH_LONG).show();
         } else {

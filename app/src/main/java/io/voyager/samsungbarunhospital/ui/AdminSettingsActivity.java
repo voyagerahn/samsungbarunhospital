@@ -928,7 +928,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
         }
 
         sb.append("연결된 기기: ").append(links).append("대\n");
-        if (running && links == 0) warnings.add("연결된 기기가 0대입니다 — 상대 태블릿이 너무 멀거나, 블루투스가 꺼져 있거나, 앱이 꺼져 있을 수 있습니다.");
+        if (running && links == 0) warnings.add("연결된 기기가 0대입니다 — 상대 태블릿이 너무 멀거나, 블루투스가 꺼져 있거나, 앱이 꺼져 있을 수 있습니다. 앱이 자동으로 계속 다시 찾고 있으니 1~2분 뒤 다시 확인해보세요.");
+        int scanFailures = BleMeshManager.getScanFailureStreak();
+        sb.append("주변 기기 검색: ").append(scanFailures == 0 ? "정상" : "연속 " + scanFailures + "회 실패").append('\n');
+        if (scanFailures >= 5) warnings.add("주변 기기 검색이 계속 실패하고 있습니다 — 기기 설정에서 블루투스를 껐다가 다시 켜주세요. (앱이 자동으로 다시 시작합니다)");
 
         List<BleMeshManager.DiscoveredPeer> nearby = BleMeshManager.getDiscoveredPeers();
         sb.append("근처에서 감지된 기기: ").append(nearby.size()).append("대");

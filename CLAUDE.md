@@ -194,7 +194,21 @@ ANNOUNCE는 간호사/환자를 구분하지 않으므로 "근처 기기 검색"
   ```
   (`.idsig` 부산물은 불필요해서 삭제.) 에뮬레이터에서 v2.1.2 설치 → 설정 저장 → v2.2.0 덮어 설치 → 설정 유지 확인함. 전용 release 키스토어 전환은 여전히 "다음에 할 일" 참고 — 전환하면 그때는 전체 재설치 필요.
 - `assembleRelease` 중 출력되는 `e: ... incompatible version of Kotlin ... expected version is 1.7.1`은 lint(lintVital)의 내장 Kotlin 분석기 버전 문제로 나오는 메시지이고 빌드는 성공함(무시 가능).
-- 사용자 매뉴얼 `docs/manual.md`는 md-to-pdf frontmatter 형식이지만 이 환경에 Node가 없어, `manual.pdf`는 Python `markdown`으로 HTML 변환(frontmatter의 stylesheet·margin을 그대로 적용) 후 Chrome headless `--print-to-pdf`로 생성함.
+- 사용자 매뉴얼 `docs/manual.md`는 md-to-pdf frontmatter 형식이지만 이 환경에 Node가 없어, `manual.pdf`는 `python3 docs/build_pdf.py`(Python `markdown`으로 HTML 변환, frontmatter의 stylesheet·margin 그대로 적용 → Chrome headless `--print-to-pdf`)로 생성함.
+
+### 현장 보고: "쓰다 보면 블루투스 연결 0대, 재부팅하면 됨" (2026-10-13, v2.2.1)
+
+v2.2.0 배포 후 병원에서 블루투스 호출 동작 확인됨(첫 실기기 확인). 이후 진단 기록으로 들어온 문제:
+환자 태블릿 — 10:31에 약 1분간 스캔 실패(오류코드 2, 5초 간격) 후 멈춤(=10:32 스캔 시작 성공으로 추정, 정상은 기록 안 하므로) → 14:30~14:44 호출/취소가 전부 "연결된 기기 0대" → 양쪽 태블릿 블루투스 꺼짐 기록(현장에서 껐다 켠 것으로 추정) → 재부팅 후 정상.
+
+- **가장 유력한 원인(코드 확인, 실기기 재현은 못 함)**: 스캔을 `start()` 때 한 번만 걸고 영원히 방치. Android 7+는 30분 넘게 도는 스캔을 opportunistic으로 강등해 결과를 안 줌 → 앱 시작 30분 뒤부터는 한 번 끊긴 링크를 다시 찾지 못함(재부팅=앱 재시작 전까지 0대).
+- 수정(`BleGattClientManager`): 60초마다 점검해 스캔을 10분마다(연결 0대면 2분마다) stop→start(`refreshScanIfDue`). 스캔 실패 재시도는 연속 실패 횟수에 비례해 간격이 실제로 늘어나게(예전엔 `startScan` 직후 카운터를 0으로 되돌려 항상 3초 → "30초 5회" 제한에 걸릴 수 있었음). 주소별 연결 실패 backoff(5s→60s). 광고의 scan response에 실린 peerId로 **주소만 바뀐 같은 기기에 중복 연결하지 않음**(Android 광고 주소는 주기적으로 바뀜).
+- 수정(`BleGattServerManager`): 연결 0대로 5분 지나면 광고 재시작.
+- **보관 후 재전송을 CALL/CANCEL로 확대**(`BleStoreForwardCache`를 타입 제한 없이 일반화, 항목별 TTL + key): 내보낼 수 있는 링크가 0개(`BleConnectionManager.writableCount()`)면 버리지 않고 `PENDING_CALL_TIMEOUT_MS`(10분) 보관 → 받는 기기에서 온 패킷을 볼 때마다(`flushPendingFor`, 온라인 "전환" 때만이 아님 — 끊긴 지 1분 안에 재연결되면 전환이 안 일어남) 재전송. **링크는 있는데 상대만 미감지인 경우는 보관하지 않음** — 중계로 이미 닿아 간호사가 확인·삭제한 호출이 재전송으로 다시 뜨는 것을 막기 위해. CANCEL은 아직 안 나간 CALL이 보관돼 있으면 그것만 지우고 끝. `stop()`에서 캐시를 비우지 않음(블루투스 껐다 켠 뒤 재전송되어야 하므로).
+- 환자 화면: 링크 0개면 "블루투스 연결이 끊겨 있습니다. 다시 연결되면 자동으로 전달합니다 (10분 이내)". 자가진단에 "주변 기기 검색: 정상/연속 N회 실패"(5회 이상이면 블루투스 껐다 켜라는 경고). 반복 실패 기록은 처음과 10회마다만 남김.
+- 오류코드 2(`SCAN_FAILED_APPLICATION_REGISTRATION_FAILED`)가 계속되면 앱에서 해결 불가 — 블루투스 토글이 필요한데 targetSdk 33은 앱이 직접 토글할 수 없음(사용자 안내로 처리).
+- 검증: 단위테스트 58개(보관/TTL/취소 철회 3개 추가), 에뮬레이터 실행·자가진단·v2.2.0→v2.2.1 덮어 설치. **재연결 동작 자체는 실기기에서만 확인 가능** — 다음 진단 기록에서 "보관했던 N건을 … 재전송" 줄이 보이면 동작한 것.
+- 배포: `release/삼성바른병원_환자호출_v2.2.1_20261013.apk`. 매뉴얼 PDF는 `python3 docs/build_pdf.py`로 생성(스크립트를 저장소에 둠).
 
 ### 다음에 이어서 할 일
 - **실제 배포 전 필수**: 전용 release 키스토어 생성 + `app/build.gradle`에 release `signingConfig` 추가(위 "배포용 APK 서명" 참고).
