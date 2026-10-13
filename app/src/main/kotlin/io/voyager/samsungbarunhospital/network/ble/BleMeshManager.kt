@@ -169,15 +169,18 @@ object BleMeshManager {
             override fun onDeviceConnected(address: String) {
                 // 링크가 준비되자마자 ANNOUNCE를 보낸다(bitchat과 동일). 30초 주기만 기다리면, 다시
                 // 연결된 뒤에도 서로 누구인지 알고 보관해둔 호출을 내보내기까지 최대 30초가 걸린다.
+                lastLinkGainedAt = System.currentTimeMillis()
                 mainScope.launch {
                     delay(200)
                     sendPacket(buildAnnouncePacket(), excludeAddress = null)
+                    sendKnownAnnouncesTo(address)
                 }
                 serverManager?.onLinkGained()
                 wakeOutbox() // 기다리던 메시지가 이제 나갈 수 있을지도 모른다
             }
             override fun onDeviceDisconnected(address: String) {
                 // 복구는 시계가 아니라 이 사건이 계기다: 끊긴 순간 다시 찾고(스캔), 다시 찾을 수 있게 한다(광고).
+                peerManager?.onLinkLost(address) // 이 링크로만 소식을 듣던 기기는 길을 다시 확인해야 한다
                 clientManager?.onLinkLost()
                 serverManager?.onLinkLost()
             }
@@ -190,7 +193,9 @@ object BleMeshManager {
         val client = BleGattClientManager(
             appContext, mainScope, connectionManager, transportDelegate,
             registeredNurses = { registeredNursePeerIds() },
-            evictServerLink = { address -> serverManager?.disconnectDevice(address) }
+            evictServerLink = { address -> serverManager?.disconnectDevice(address) },
+            wantsRelayLink = { pending, candidate -> wantsRelayLink(pending, candidate) },
+            isPeerInMesh = { peerManager?.isOnline(it) == true }
         )
         client.start()
         clientManager = client
@@ -226,6 +231,7 @@ object BleMeshManager {
         serverManager = null
         connectionManager.clear()
         dedupCache.clear()
+        announceCache.clear()
         lastActivityAtMs = 0L
     }
 
@@ -457,6 +463,50 @@ object BleMeshManager {
         true
     }
 
+    // ── 간호사까지의 길 만들기 ─────────────────────────────────────────────
+    // 사용자는 간호사 태블릿만 등록한다. 직접 닿지 않으면 어느 태블릿을 거쳐 갈지는 앱이 스스로 정한다 —
+    // 규칙은 [BleConnectPolicy], 여기서는 그 판단에 필요한 사실("간호사까지 길이 있는가")을 만든다.
+
+    @Volatile private var lastLinkGainedAt = 0L
+
+    private class CachedAnnounce(val bytes: ByteArray, val at: Long)
+
+    // 다른 기기들의 최근 ANNOUNCE(중계할 형태 그대로) — 새로 연결된 상대에게 넘겨주기 위해 보관한다.
+    private val announceCache = java.util.concurrent.ConcurrentHashMap<String, CachedAnnounce>()
+
+    /**
+     * 방금 연결된 상대에게 내가 아는 기기들의 최근 ANNOUNCE를 넘겨준다(bitchat이 연결 직후 서로 아는 것을
+     * 맞추는 것과 같은 목적). 이게 없으면 새로 붙은 태블릿은 간호사의 다음 ANNOUNCE가 흘러올 때까지(최대
+     * 30초) 이 연결이 간호사까지 이어지는지 알 수 없어, 그동안 호출을 못 내보내고 불필요한 연결을 더 건다.
+     * 받는 쪽은 이미 본 것이면 중복으로 버린다.
+     */
+    private suspend fun sendKnownAnnouncesTo(address: String) {
+        val now = System.currentTimeMillis()
+        val linkedPeer = connectionManager.get(address)?.peerIdHex
+        for ((peerIdHex, cached) in announceCache) {
+            if (now - cached.at > BleMeshConstants.ANNOUNCE_SYNC_MAX_AGE_MS) {
+                announceCache.remove(peerIdHex, cached)
+                continue
+            }
+            if (peerIdHex == linkedPeer) continue // 상대 자신의 소식
+            connectionManager.sendToAwait(address, cached.bytes, serverManager?.getGattServer(), serverManager?.getCharacteristic())
+        }
+    }
+
+    /** [BleConnectPolicy.wantsRelayLink]에 넘길 현재 상태를 모은다. */
+    private fun wantsRelayLink(pendingAttempts: Int, candidatePeerIdHex: String?): Boolean {
+        val nurses = registeredNursePeerIds()
+        val peers = peerManager
+        return BleConnectPolicy.wantsRelayLink(
+            hasRegisteredNurse = nurses.isNotEmpty(),
+            writableLinks = connectionManager.writableCount(),
+            pendingAttempts = pendingAttempts,
+            allNursesHavePath = peers != null && nurses.all { connectionManager.isPeerLinked(it) || peers.hasPath(it) },
+            candidateInMesh = candidatePeerIdHex != null && peers?.isOnline(candidatePeerIdHex) == true,
+            msSinceLinkGained = System.currentTimeMillis() - lastLinkGainedAt
+        )
+    }
+
     private fun isControl(type: BlePacketType) =
         type == BlePacketType.CALL || type == BlePacketType.CANCEL || type == BlePacketType.CONFIRMED
 
@@ -526,16 +576,23 @@ object BleMeshManager {
             // 나에게 온 것의 재전송: 처음 왔을 때 처리하지 못했다면(수신 처리기 미등록 등) 지금 처리한다.
             // 이미 처리한 것이면 deliverControl이 걸러낸다.
             if (forMe && isControl(packet.type)) deliverControl(packet, senderHex, listener, logIfUnready = false)
+            // 같은 ANNOUNCE가 다른 링크로도 왔다 = 그 기기까지 가는 길이 이 링크에도 있다.
+            if (packet.type == BlePacketType.ANNOUNCE) peerManager?.confirmPath(senderHex, fromAddress)
             return
         }
 
         lastActivityAtMs = System.currentTimeMillis()
-        peerManager?.markSeen(senderHex)
+        // 거쳐 온 태블릿 수 = 줄어든 TTL. 어느 링크로 들어왔는지도 기록한다(그 기기까지 길이 있다는 근거).
+        peerManager?.markSeen(senderHex, (BleMeshConstants.DEFAULT_TTL - packet.ttl).coerceAtLeast(0), fromAddress)
 
         if (isControl(packet.type)) mayRelayAgain(messageIdHex) // 첫 중계 시각 기록
         BlePacketRelay.decideRelay(packet, myPeerId)?.let { relayed ->
+            val relayedBytes = relayed.encode()
+            if (packet.type == BlePacketType.ANNOUNCE) {
+                announceCache[senderHex] = CachedAnnounce(relayedBytes, System.currentTimeMillis())
+            }
             connectionManager.broadcast(
-                relayed.encode(),
+                relayedBytes,
                 serverManager?.getGattServer(),
                 serverManager?.getCharacteristic(),
                 excludeAddress = fromAddress
@@ -688,12 +745,23 @@ object BleMeshManager {
     @JvmStatic
     fun getMyPeerIdHex(): String = myPeerId.toHex()
 
-    /** peerId(hex)와 마지막으로 들은 이름(없으면 null). 관리자 화면의 "근처 기기 검색" 목록용. */
-    class DiscoveredPeer(@JvmField val peerId: String, @JvmField val name: String?)
+    /**
+     * peerId(hex)와 마지막으로 들은 이름(없으면 null). 관리자 화면의 "근처 기기 검색" 목록과 연결 현황용.
+     * @param relays 그 기기까지 거치는 다른 태블릿 수(0 = 직접 연결, -1 = 모름)
+     */
+    class DiscoveredPeer(@JvmField val peerId: String, @JvmField val name: String?, @JvmField val relays: Int)
+
+    /** [peerIdHex]까지 거치는 다른 태블릿 수(0 = 직접 연결). 닿지 않거나 모르면 -1. */
+    @JvmStatic
+    fun getRelayCount(peerIdHex: String): Int {
+        val id = peerIdHex.lowercase()
+        if (connectionManager.isPeerLinked(id)) return 0
+        return peerManager?.hopsTo(id) ?: -1
+    }
 
     @JvmStatic
     fun getDiscoveredPeers(): List<DiscoveredPeer> {
         val peers = peerManager ?: return emptyList()
-        return peers.listOnline().map { DiscoveredPeer(it.peerIdHex, it.name) }
+        return peers.listOnline().map { DiscoveredPeer(it.peerIdHex, it.name, if (connectionManager.isPeerLinked(it.peerIdHex)) 0 else it.hops) }
     }
 }

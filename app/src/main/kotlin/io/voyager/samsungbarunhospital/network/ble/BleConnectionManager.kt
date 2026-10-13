@@ -73,10 +73,7 @@ class BleConnectionManager {
     fun remove(address: String): BleConnection? {
         // Connection is gone — any write we were waiting to have acked on it never will be.
         pendingWriteAcks.remove(address)?.complete(Unit)
-        val removed = connections.remove(address)
-        // 링크가 줄어 자리가 났으면 포화 상태가 풀린다.
-        if (saturatedAt >= 0 && connections.size < saturatedAt) saturatedAt = -1
-        return removed
+        return connections.remove(address)
     }
 
     fun get(address: String): BleConnection? = connections[address]
@@ -109,13 +106,14 @@ class BleConnectionManager {
     fun isPeerLinked(peerIdHex: String): Boolean =
         connections.values.any { it.peerIdHex == peerIdHex && it.isWritable }
 
-    // 칩이 "더 못 받는다"는 신호를 준 순간의 링크 수(-1 = 그런 상태 아님). 링크가 그보다 줄면 풀린다.
+    // 칩이 "더 못 받는다"는 신호를 준 순간의 링크 수 = 이 기기의 한도(-1 = 아직 모름). 블루투스가 다시
+    // 시작될 때([clear])까지 기억한다 — 이유는 [BleLinkLimit] 참고.
     @Volatile private var saturatedAt = -1
 
-    /** 지금 적용되는 링크 수 한도 — 고정값이 아니라 칩의 현재 상태에서 나온다([BleLinkLimit]). */
+    /** 지금 적용되는 링크 수 한도 — 고정값이 아니라 칩이 알려준 값이다([BleLinkLimit]). */
     val maxLinks: Int get() = BleLinkLimit.effective(saturatedAt)
 
-    /** 포화 상태로 표시된 링크 수(아니면 -1). */
+    /** 칩이 알려준 한도(아직 모르면 -1). */
     fun saturatedAt(): Int = saturatedAt
 
     /** 칩이 알려준 한도만큼 지금 다 차 있는지 — "더 추가할 수 없음" 안내용. */
@@ -132,9 +130,12 @@ class BleConnectionManager {
         return newly
     }
 
-    /** 칩이 다시 받아줄 수 있다는 증거가 생겼을 때(광고가 켜짐). */
-    fun clearSaturation() {
-        saturatedAt = -1
+    /**
+     * 광고가 켜졌다 = 칩이 연결을 더 받을 수 있다. 한도라고 본 수만큼 이미 연결돼 있는데도 켜졌다면 그 한도는
+     * 틀린 판단이었으므로 잊는다. 그보다 적게 연결된 상태라면 한도는 그대로 둔다.
+     */
+    fun onAdvertisingStarted() {
+        if (saturatedAt >= 0 && connections.size >= saturatedAt) saturatedAt = -1
     }
 
     fun isFull(): Boolean = connections.size >= maxLinks
@@ -158,20 +159,28 @@ class BleConnectionManager {
         coroutineScope {
             for (conn in connections.values) {
                 if (conn.address == excludeAddress) continue
-                launch {
-                    try {
-                        if (conn.isClient) {
-                            val gatt = conn.gatt ?: return@launch
-                            val characteristic = conn.writeCharacteristic ?: return@launch
-                            writeAndAwaitAck(conn.address) { writeToCharacteristic(gatt, characteristic, bytes) }
-                        } else if (conn.subscribed && gattServer != null && serverCharacteristic != null) {
-                            writeAndAwaitAck(conn.address) { notifyDevice(gattServer, conn.device, serverCharacteristic, bytes) }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to send to ${conn.address}: ${e.message}")
-                    }
-                }
+                launch { writeOne(conn, bytes, gattServer, serverCharacteristic) }
             }
+        }
+    }
+
+    /** [address] 링크 하나로만 보낸다. [broadcast]처럼 앞선 쓰기가 끝나기를 기다리므로 연달아 불러도 된다. */
+    suspend fun sendToAwait(address: String, bytes: ByteArray, gattServer: BluetoothGattServer?, serverCharacteristic: BluetoothGattCharacteristic?) {
+        val conn = connections[address] ?: return
+        writeOne(conn, bytes, gattServer, serverCharacteristic)
+    }
+
+    private suspend fun writeOne(conn: BleConnection, bytes: ByteArray, gattServer: BluetoothGattServer?, serverCharacteristic: BluetoothGattCharacteristic?) {
+        try {
+            if (conn.isClient) {
+                val gatt = conn.gatt ?: return
+                val characteristic = conn.writeCharacteristic ?: return
+                writeAndAwaitAck(conn.address) { writeToCharacteristic(gatt, characteristic, bytes) }
+            } else if (conn.subscribed && gattServer != null && serverCharacteristic != null) {
+                writeAndAwaitAck(conn.address) { notifyDevice(gattServer, conn.device, serverCharacteristic, bytes) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to send to ${conn.address}: ${e.message}")
         }
     }
 

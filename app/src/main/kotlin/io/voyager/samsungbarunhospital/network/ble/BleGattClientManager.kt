@@ -38,7 +38,8 @@ import kotlinx.coroutines.launch
  * (in either direction, or under an older advertising address) isn't connected again.
  *
  * Who to connect to is decided by [BleConnectPolicy]: registered nurses always get a slot first;
- * other tablets are still linked (they relay toward the nurse when it's out of direct range).
+ * other tablets are linked only until there is a path to the nurse (they relay toward it when it's
+ * out of direct range), leaving the remaining slots free for tablets that are further away.
  */
 class BleGattClientManager(
     private val context: Context,
@@ -48,7 +49,14 @@ class BleGattClientManager(
     /** 이 기기에 등록된 간호사 태블릿들의 peerId(hex) — 연결 자리를 먼저 확보할 대상. */
     private val registeredNurses: () -> Set<String> = { emptySet() },
     /** 상대가 우리 서버에 걸어온 링크를 끊어달라는 요청(주소). */
-    private val evictServerLink: (String) -> Unit = {}
+    private val evictServerLink: (String) -> Unit = {},
+    /**
+     * 간호사가 아닌 태블릿(중계용)과의 연결이 지금 더 필요한지 — 인자는 진행 중인 연결 시도 수와 발견한 기기.
+     * [BleConnectPolicy.wantsRelayLink] 참고.
+     */
+    private val wantsRelayLink: (pendingAttempts: Int, candidatePeerIdHex: String?) -> Boolean = { _, _ -> true },
+    /** 그 기기의 소식이 (다른 태블릿을 거쳐서라도) 이미 들리고 있는지. */
+    private val isPeerInMesh: (String) -> Boolean = { false }
 ) {
     companion object {
         private const val TAG = "BleGattClientManager"
@@ -266,12 +274,15 @@ class BleGattClientManager(
 
         val nurses = registeredNurses()
         val evictable = findEvictableLink(nurses)
+        val isNurse = peerIdHex != null && peerIdHex in nurses
         val decision = BleConnectPolicy.decide(
-            isRegisteredNurse = peerIdHex != null && peerIdHex in nurses,
+            isRegisteredNurse = isNurse,
             linkCount = connectionManager.count() + pendingConnections.size,
             maxLinks = connectionManager.maxLinks,
             unlinkedNurseCount = nurses.count { it != peerIdHex && !connectionManager.isPeerLinked(it) && !clientPeerIds.containsValue(it) },
-            hasEvictable = evictable != null
+            hasEvictable = evictable != null,
+            wantsRelayLink = isNurse || wantsRelayLink(pendingConnections.size, peerIdHex),
+            expandsReach = !isNurse && nurses.isNotEmpty() && peerIdHex != null && !isPeerInMesh(peerIdHex)
         )
         when (decision) {
             BleConnectPolicy.Decision.SKIP -> return
@@ -318,7 +329,7 @@ class BleGattClientManager(
         if (status == BleStatusText.HCI_CONNECTION_LIMIT_EXCEEDED &&
             connectionManager.markSaturated(links, explicitLimit = true)
         ) {
-            DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links}대로 판단 — 연결이 하나 줄 때까지 더 연결하지 않음")
+            DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links}대로 판단 — 이 수를 넘겨 연결하지 않음")
         }
     }
 

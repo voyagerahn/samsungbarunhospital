@@ -72,6 +72,13 @@ object BleMeshConstants {
     // 등록된 간호사 태블릿은 끊겨도 계속 붙어야 하므로 재시도 간격 상한을 짧게 둔다.
     const val CONNECT_RETRY_BACKOFF_MAX_NURSE_MS = 15_000L
 
+    // 중계용 연결을 하나 맺은 뒤, 그 연결로 간호사까지 길이 생겼는지 알게 될 때까지 다음 연결을 걸지 않고
+    // 기다리는 시간. 연결 직후 상대가 아는 기기들의 소식(ANNOUNCE)을 넘겨주므로 보통 1~2초면 알 수 있다.
+    const val LINK_SETTLE_MS = 6_000L
+    // 새로 연결된 상대에게 넘겨줄 다른 기기 소식의 최대 나이 — ANNOUNCE 주기보다 조금 길게. 더 오래된 것은
+    // 그 기기가 이미 사라졌을 수 있으므로 넘기지 않는다.
+    const val ANNOUNCE_SYNC_MAX_AGE_MS = 35_000L
+
 
     const val ADVERTISE_RESTART_BACKOFF_BASE_MS = 3_000L
     const val ADVERTISE_RESTART_BACKOFF_MAX_MS = 30_000L

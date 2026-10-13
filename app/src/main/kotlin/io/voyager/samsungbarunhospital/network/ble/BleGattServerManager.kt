@@ -297,7 +297,7 @@ class BleGattServerManager(
                 advertiseErrorCode = 0
                 advertiseFailureStreak = 0
                 refusedByChip = false
-                connectionManager.clearSaturation() // 광고가 켜졌다 = 칩이 더 받을 수 있는 상태
+                connectionManager.onAdvertisingStarted()
                 Log.i(TAG, "Advertising started")
             }
 
@@ -321,7 +321,7 @@ class BleGattServerManager(
                         // 연결이 하나도 없는데 거부된 경우는 기다릴 사건이 없으므로 일반 실패처럼 간격을 두고 재시도.
                         scheduleAdvertiseRestart()
                     } else if (connectionManager.markSaturated(links.size, explicitLimit = false)) {
-                        DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links.size}대로 판단 — 연결이 하나 줄 때까지 더 연결하지 않음")
+                        DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links.size}대로 판단 — 이 수를 넘겨 연결하지 않음")
                     }
                 } else if (errorCode != ADVERTISE_FAILED_ALREADY_STARTED &&
                     errorCode != ADVERTISE_FAILED_DATA_TOO_LARGE &&

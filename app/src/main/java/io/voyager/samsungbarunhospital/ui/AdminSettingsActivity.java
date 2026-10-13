@@ -525,8 +525,36 @@ public class AdminSettingsActivity extends AppCompatActivity {
     /** 등록된 간호사 태블릿과 지금 어떤 상태로 이어져 있는지 한 마디로. */
     private static String describeNurseLink(String peerId) {
         if (BleMeshManager.isPeerDirectlyLinked(peerId)) return "직접 연결됨";
-        if (BleMeshManager.isPeerOnline(peerId)) return "다른 태블릿을 거쳐 연결됨";
+        if (BleMeshManager.isPeerOnline(peerId)) return describeRelays(BleMeshManager.getRelayCount(peerId));
         return "감지 안 됨";
+    }
+
+    /** 그 태블릿까지 몇 대를 거쳐 이어져 있는지 한 마디로. */
+    private static String describeRelays(int relays) {
+        if (relays == 0) return "직접 연결됨";
+        if (relays > 0) return "다른 태블릿 " + relays + "대를 거쳐 연결됨";
+        return "다른 태블릿을 거쳐 연결됨";
+    }
+
+    /** 간호사 태블릿이 감지되지 않을 때 현장에서 할 수 있는 일. */
+    private static final String NURSE_OUT_OF_REACH_GUIDE =
+            "간호사 태블릿과 너무 멀면, 그 사이에 이 앱이 켜진 다른 태블릿이 있어야 그 태블릿을 거쳐 자동으로 연결됩니다. "
+            + "태블릿 사이 간격은 10m 안쪽(벽이 있으면 더 가깝게)이 좋습니다. 사이에 태블릿을 한 대 더 두거나 "
+            + "간호사 태블릿 쪽으로 옮긴 뒤 1분쯤 기다려 다시 확인하세요.";
+
+    /** 블루투스로 지금 닿는 태블릿 목록(이름 + 직접/몇 대 거쳐). 없으면 빈 문자열. */
+    private static String describeReachablePeers() {
+        List<BleMeshManager.DiscoveredPeer> peers = BleMeshManager.getDiscoveredPeers();
+        if (peers.isEmpty()) return "";
+        int direct = 0;
+        StringBuilder list = new StringBuilder();
+        for (BleMeshManager.DiscoveredPeer p : peers) {
+            if (p.relays == 0) direct++;
+            list.append("\n  · ").append(p.name != null && !p.name.isEmpty() ? p.name : "(이름 없음)")
+                .append(" — ").append(describeRelays(p.relays));
+        }
+        return "블루투스로 닿는 태블릿: " + peers.size() + "대 (직접 " + direct + ", 다른 태블릿을 거쳐 "
+                + (peers.size() - direct) + ")" + list;
     }
 
     private Button buildRowButton(String text, int backgroundRes, View.OnClickListener onClick) {
@@ -914,6 +942,25 @@ public class AdminSettingsActivity extends AppCompatActivity {
             sb.append("\n");
 
             sb.append("최근 통신: ").append(lastActivity == 0L ? "아직 없음" : formatAgo(lastActivity));
+            String reachable = describeReachablePeers();
+            if (!reachable.isEmpty()) sb.append("\n\n").append(reachable);
+            boolean nurseOutOfReach = false;
+            StringBuilder nurseLines = new StringBuilder();
+            for (String ip : AppSettings.getNurseIps(this)) {
+                String peerId = AppSettings.getNursePeerId(this, ip);
+                if (peerId == null) continue;
+                nurseLines.append("\n  · ").append(ip).append(" — ").append(describeNurseLink(peerId));
+                if (!BleMeshManager.isPeerReachable(peerId)) nurseOutOfReach = true;
+            }
+            for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
+                nurseLines.append("\n  · ").append(n.label != null && !n.label.isEmpty() ? n.label : shortId(n.peerId))
+                        .append(" — ").append(describeNurseLink(n.peerId));
+                if (!BleMeshManager.isPeerReachable(n.peerId)) nurseOutOfReach = true;
+            }
+            if (nurseLines.length() > 0) sb.append("\n\n간호사 태블릿(블루투스):").append(nurseLines);
+            if (btOn && nurseOutOfReach && BleMeshManager.isRunning()) {
+                sb.append("\n\n⚠ 간호사 태블릿이 감지되지 않습니다. ").append(NURSE_OUT_OF_REACH_GUIDE);
+            }
 
             if (!btOn) {
                 sb.append("\n\n⚠ 블루투스가 꺼져 있어 근거리 통신으로 호출을 주고받을 수 없습니다. 기기 설정에서 블루투스를 켜주세요.");
@@ -1001,10 +1048,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
         if (scanFailures >= 5) warnings.add("주변 기기 검색이 계속 실패하고 있습니다 — 기기 설정에서 블루투스를 껐다가 다시 켜주세요. (앱이 자동으로 다시 시작합니다)");
 
         List<BleMeshManager.DiscoveredPeer> nearby = BleMeshManager.getDiscoveredPeers();
-        sb.append("근처에서 감지된 기기: ").append(nearby.size()).append("대");
+        sb.append("블루투스로 닿는 태블릿: ").append(nearby.size()).append("대");
         for (BleMeshManager.DiscoveredPeer p : nearby) {
             sb.append("\n  · ").append(p.name != null && !p.name.isEmpty() ? p.name : "(이름 없음)")
-              .append(" (").append(p.peerId.substring(0, 8)).append(')');
+              .append(" (").append(shortId(p.peerId)).append(") — ").append(describeRelays(p.relays));
         }
         sb.append('\n');
         long last = BleMeshManager.getLastActivityAtMs();
@@ -1022,7 +1069,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 warnings.add(ip + " 간호사는 블루투스 연결이 안 되어 있어 Wi-Fi가 안 될 때 호출이 가지 않습니다 — 통신 설정에서 '블루투스 연결'을 하세요.");
             } else {
                 sb.append(shortId(peerId)).append(" — ").append(describeNurseLink(peerId));
-                if (!BleMeshManager.isPeerReachable(peerId) && running) warnings.add(ip + " 간호사 태블릿(" + shortId(peerId) + ")이 근처에서 감지되지 않습니다. 호출하면 다시 연결될 때까지 기다렸다가 전달됩니다.");
+                if (!BleMeshManager.isPeerReachable(peerId) && running) warnings.add(ip + " 간호사 태블릿(" + shortId(peerId) + ")이 감지되지 않습니다. 호출하면 다시 연결될 때까지 기다렸다가 전달됩니다. " + NURSE_OUT_OF_REACH_GUIDE);
             }
         }
         for (BleOnlyNurse n : AppSettings.getBleOnlyNurses(this)) {
@@ -1030,7 +1077,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
             boolean online = BleMeshManager.isPeerReachable(n.peerId);
             sb.append("\n  · BLE 전용 ").append(n.label != null ? n.label : "").append(" (").append(shortId(n.peerId)).append(')')
               .append(" — ").append(describeNurseLink(n.peerId));
-            if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : shortId(n.peerId)) + "이(가) 근처에서 감지되지 않습니다.");
+            if (!online && running) warnings.add("BLE 전용 간호사 " + (n.label != null ? n.label : shortId(n.peerId)) + "이(가) 감지되지 않습니다. " + NURSE_OUT_OF_REACH_GUIDE);
         }
         if (targets == 0) sb.append(" 없음 (간호사 태블릿이면 정상)");
         int pending = BleMeshManager.getPendingDeliveryCount();
