@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private final List<String>       confirmedMessages   = new ArrayList<>(); // 완료 표시 중인 메시지
     // 간호사 태블릿이 받았다고 확인된 호출 id (Wi-Fi는 ACK 응답, 블루투스는 ACK 패킷). 메인 스레드에서만 접근.
     private final java.util.Set<String> deliveredCallIds = new java.util.HashSet<>();
-    private static final long BLE_ACK_NOTICE_DELAY_MS = 8000L;
+    private static final long BLE_ACK_NOTICE_DELAY_MS = 4000L;
     private final Handler            bannerHandler       = new Handler(Looper.getMainLooper());
     private final List<Bitmap>       loadedBitmaps       = new ArrayList<>(); // 비트맵 추적 → onDestroy에서 recycle
 
@@ -422,7 +422,7 @@ public class MainActivity extends AppCompatActivity {
      * 보낸 경로에 맞춰 결과를 알린다. 블루투스는 Wi-Fi와 "통신 수단만 다르고 동작은 같게" 맞춘다:
      * - Wi-Fi: 간호사 태블릿이 ACK를 돌려주면 "전달되었습니다", 아니면 "전달 실패".
      * - 블루투스: 간호사 태블릿의 수신 확인(ACK 패킷)이 오면 똑같이 "전달되었습니다"
-     *   ([onBleCallDelivered]). 확인이 올 때까지 BleMeshManager가 30초 동안 다시 보내고(연결이 끊겨
+     *   ([onBleCallDelivered]). 확인이 올 때까지 BleMeshManager가 10초 동안 다시 보내고(연결이 끊겨
      *   있으면 그동안 다시 닿기를 기다린다), 그래도 안 되면 "전달 실패"([onBleCallUndelivered]) —
      *   오래 보관했다가 늦게 전달하지 않는다(늦게 울린 호출은 방금 누른 것으로 오해된다).
      *
