@@ -9,7 +9,8 @@ package io.voyager.samsungbarunhospital.network.ble
  *
  * - 호출·취소·확인응답을 보낼 때 여기 넣어두고, ACK가 올 때까지 간격을 늘려가며 다시 보낸다.
  * - 받는 기기에 닿을 수 없는 동안은 보내지 않고 기다렸다가, 닿는 순간 보낸다.
- * - [timeoutMs]가 지나도 ACK가 없으면 포기한다(간호사 쪽 호출 만료 30분과 같은 값).
+ * - 기한이 지나도 ACK가 없으면 포기한다. 기한은 메시지마다 다르다([add]의 timeoutMs) — 호출은 짧게
+ *   (늦게 도착한 호출은 위험하다), 취소·확인응답은 길게(늦게라도 도착하는 편이 낫다).
  *
  * 다시 보낼 때 매번 **똑같은 바이트(같은 messageId)**를 보낸다. 받는 쪽은 messageId로 중복을 걸러 한 번만
  * 처리하고, 중복으로 받은 것에도 ACK는 다시 돌려준다 — 그래야 ACK가 중간에 사라져도 다음 재전송에서
@@ -32,7 +33,9 @@ class BleReliableOutbox(
         val key: String,
         /** 기록용 한 줄 설명(예: "호출 #1a2b3c4d"). */
         val what: String,
-        val expiresAt: Long
+        val expiresAt: Long,
+        /** 이 메시지에 주어진 기한(기록용). */
+        val timeoutMs: Long
     ) {
         /** 지금까지 내보낸 횟수. 0이면 아직 한 번도 못 나간 것. */
         var attempts = 0
@@ -49,8 +52,15 @@ class BleReliableOutbox(
      * @return 자리를 만들려고 밀려난(포기된) 가장 오래된 항목들 — 상한 [maxEntries]을 넘지 않게 한다.
      */
     @Synchronized
-    fun add(messageIdHex: String, recipientHex: String, frames: List<ByteArray>, key: String, what: String): List<Entry> {
-        entries[messageIdHex] = Entry(messageIdHex, recipientHex, frames, key, what, clock() + timeoutMs)
+    fun add(
+        messageIdHex: String,
+        recipientHex: String,
+        frames: List<ByteArray>,
+        key: String,
+        what: String,
+        timeoutMs: Long = this.timeoutMs
+    ): List<Entry> {
+        entries[messageIdHex] = Entry(messageIdHex, recipientHex, frames, key, what, clock() + timeoutMs, timeoutMs)
         val dropped = ArrayList<Entry>()
         val it = entries.values.iterator()
         while (entries.size > maxEntries && it.hasNext()) {

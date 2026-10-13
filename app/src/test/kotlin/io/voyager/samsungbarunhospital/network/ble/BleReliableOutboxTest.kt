@@ -104,4 +104,17 @@ class BleReliableOutboxTest {
         // 닿을 수 없으면 닿게 되는 사건이 올 때까지 할 일이 없다 — 만료 시각까지 잔다.
         assertEquals(30 * 60_000L, box.nextWakeDelayMs { false })
     }
+
+    @Test
+    fun `a call expires long before a cancel added at the same time`() {
+        // 호출은 늦게 도착하면 위험하므로 짧게, 취소·확인응답은 늦게라도 도착해야 하므로 길게.
+        val box = outbox()
+        box.add("call", "aa", listOf(ByteArray(1)), "CALL:1@aa", "호출", timeoutMs = 30_000L)
+        box.add("cancel", "aa", listOf(ByteArray(1)), "CANCEL:2@aa", "취소")
+        now += 30_000L
+        val expired = box.takeExpired()
+        assertEquals(listOf("call"), expired.map { it.messageIdHex })
+        assertEquals(30_000L, expired.single().timeoutMs)
+        assertEquals(1, box.size())
+    }
 }

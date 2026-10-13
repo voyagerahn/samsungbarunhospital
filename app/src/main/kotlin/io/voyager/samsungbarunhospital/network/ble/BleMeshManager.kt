@@ -270,8 +270,8 @@ object BleMeshManager {
      * 호출·취소·확인응답을 [recipientPeerIdHex]에게 "확인받을 때까지" 보낸다:
      * - 닿을 수 있으면(직접 링크가 있거나 중계를 거쳐 최근에 감지됨) 바로 보내고, ACK가 올 때까지
      *   간격을 늘려가며 다시 보낸다.
-     * - 닿을 수 없으면 버리지 않고 기다렸다가, 다시 닿는 순간 보낸다([pumpOutbox]가 1초마다 살핀다).
-     *   예전에는 그대로 버려서, 연결이 끊긴 사이의 호출은 환자 화면에만 남고 간호사에게는 영영 안 갔다.
+     * - 닿을 수 없으면 기다렸다가, 다시 닿는 순간 보낸다. 기다리는 시간은 호출은 짧고(30초 — 늦게 도착한
+     *   호출은 위험하므로 빨리 "전달 실패"를 알려 환자가 다시 누르게 한다), 취소·확인응답은 길다(30분).
      * - CANCEL은, 같은 호출이 아직 한 번도 못 나갔으면 그 호출만 거두고 끝낸다(둘 다 안 보냄).
      *   나간 적이 있으면 호출 재전송을 멈추고 CANCEL을 같은 방식으로 확인받을 때까지 보낸다.
      *
@@ -305,7 +305,8 @@ object BleMeshManager {
         )
         // 조각까지 한 번만 만들어 두고 재전송 때 똑같은 바이트를 다시 쓴다(BleReliableOutbox 주석 참고).
         val frames = BleFragmentation.fragment(packet).map { it.encode() }
-        val dropped = outbox.add(packet.messageId.toHex(), recipientHex, frames, outboxKey(type, callId, recipientHex), what)
+        val timeoutMs = if (type == BlePacketType.CALL) BleMeshConstants.CALL_DELIVERY_TIMEOUT_MS else BleMeshConstants.DELIVERY_TIMEOUT_MS
+        val dropped = outbox.add(packet.messageId.toHex(), recipientHex, frames, outboxKey(type, callId, recipientHex), what, timeoutMs)
         for (entry in dropped) giveUp(entry, "확인을 기다리는 메시지가 너무 많아 가장 오래된 것부터 포기")
         wakeOutbox()
 
@@ -314,7 +315,7 @@ object BleMeshManager {
             DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: BLE가 실행 중이 아님 — 블루투스가 켜지고 다시 연결되면 자동 전송")
         } else if (!isReachable(recipientHex)) {
             val reason = if (connectionManager.writableCount() == 0) "블루투스로 연결된 기기가 0대" else "받는 기기와 연결돼 있지 않고 근처에서도 감지되지 않음"
-            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: $reason — 다시 연결되면 자동 전송 (최대 ${BleMeshConstants.DELIVERY_TIMEOUT_MS / 60000}분)")
+            DiagLog.log("BLE송신", "$what → $to 지금은 못 나감: $reason — ${describeDuration(timeoutMs)} 안에 다시 연결되면 전송")
         }
         ensureOutboxLoop()
     }
@@ -373,6 +374,8 @@ object BleMeshManager {
         callIdOfKey(entry.key)?.let { deliveryListener?.onCallUndelivered(it) }
     }
 
+    private fun describeDuration(ms: Long): String = if (ms < 60_000L) "${ms / 1000}초" else "${ms / 60_000L}분"
+
     /** 호출(CALL) 항목의 표식에서 callId를 꺼낸다. 호출이 아니면 null. */
     private fun callIdOfKey(key: String): String? {
         if (!key.startsWith("${BlePacketType.CALL.name}:")) return null
@@ -383,7 +386,7 @@ object BleMeshManager {
     private suspend fun pumpOutbox() {
         run {
             for (expired in outbox.takeExpired()) {
-                giveUp(expired, "${BleMeshConstants.DELIVERY_TIMEOUT_MS / 60000}분 동안 수신 확인을 받지 못해 중단")
+                giveUp(expired, "${describeDuration(expired.timeoutMs)} 동안 수신 확인을 받지 못해 중단")
             }
             if (!started) return
             for (entry in outbox.takeDue { isReachable(it) }) {

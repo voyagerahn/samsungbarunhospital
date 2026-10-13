@@ -422,8 +422,9 @@ public class MainActivity extends AppCompatActivity {
      * 보낸 경로에 맞춰 결과를 알린다. 블루투스는 Wi-Fi와 "통신 수단만 다르고 동작은 같게" 맞춘다:
      * - Wi-Fi: 간호사 태블릿이 ACK를 돌려주면 "전달되었습니다", 아니면 "전달 실패".
      * - 블루투스: 간호사 태블릿의 수신 확인(ACK 패킷)이 오면 똑같이 "전달되었습니다"
-     *   ([onBleCallDelivered]). 확인이 올 때까지 BleMeshManager가 계속 다시 보내고, 연결이 끊겨 있으면
-     *   다시 닿을 때까지 기다렸다 보낸다. 끝내 못 보내면 "전달 실패"([onBleCallUndelivered]).
+     *   ([onBleCallDelivered]). 확인이 올 때까지 BleMeshManager가 30초 동안 다시 보내고(연결이 끊겨
+     *   있으면 그동안 다시 닿기를 기다린다), 그래도 안 되면 "전달 실패"([onBleCallUndelivered]) —
+     *   오래 보관했다가 늦게 전달하지 않는다(늦게 울린 호출은 방금 누른 것으로 오해된다).
      *
      * 예전에는 Wi-Fi가 실패해도 "BLE가 지원되는 기기"이기만 하면 "전달되었습니다"라고 표시해서, 환자
      * 쪽은 갔다고 보이는데 간호사 쪽에는 알람이 안 뜨는 일이 있었다.
@@ -437,11 +438,11 @@ public class MainActivity extends AppCompatActivity {
                 // 곧 수신 확인이 오면 "전달되었습니다"가 뜬다. 한동안 안 오면 계속 시도 중임을 알린다.
                 bannerHandler.postDelayed(() -> {
                     if (activeCallIds.contains(callId) && !deliveredCallIds.contains(callId)) {
-                        Toast.makeText(this, "아직 간호사 태블릿의 수신 확인이 없습니다.\n계속 보내는 중입니다.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "아직 간호사 태블릿의 수신 확인이 없습니다.\n다시 보내는 중입니다.", Toast.LENGTH_LONG).show();
                     }
                 }, BLE_ACK_NOTICE_DELAY_MS);
             } else {
-                Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n다시 연결되면 자동으로 전달합니다.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n잠시 다시 연결해 봅니다.", Toast.LENGTH_LONG).show();
             }
         } else {
             Toast.makeText(this, "전달 실패: 간호사 태블릿에 연결할 수 없습니다." + bleUnavailableHint(), Toast.LENGTH_LONG).show();
