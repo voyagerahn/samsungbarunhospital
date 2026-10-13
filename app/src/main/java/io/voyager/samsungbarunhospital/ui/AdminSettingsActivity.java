@@ -322,7 +322,15 @@ public class AdminSettingsActivity extends AppCompatActivity {
     }
 
     /** IP 직접 입력과 Wi-Fi 자동 검색이 공유하는 등록 흐름. */
+    private static final java.util.regex.Pattern IPV4 = java.util.regex.Pattern.compile(
+            "^((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)$");
+
     private void addNurseIp(String ip) {
+        // 숫자 IP가 아니면 전송할 때 이름 조회(DNS)를 시도하느라 한참 멈춘 뒤에야 실패한다 — 오타를 여기서 막는다.
+        if (!IPV4.matcher(ip).matches()) {
+            Toast.makeText(this, "IP 주소 형식이 올바르지 않습니다. 예) 192.168.1.101", Toast.LENGTH_LONG).show();
+            return;
+        }
         List<String> ips = AppSettings.getNurseIps(this);
         if (ips.contains(ip)) {
             Toast.makeText(this, "이미 등록된 IP입니다.", Toast.LENGTH_SHORT).show();

@@ -117,6 +117,17 @@ public class CallQueueActivity extends AppCompatActivity implements CallQueue.Li
         renderList();
     }
 
+    /**
+     * 닫히기 시작한 순간부터 "떠 있지 않음"으로 본다. onStop은 finish() 뒤 한참(수백 ms) 있다가 오는데,
+     * 그 사이에 새 호출이 오면 AlertReceiverService가 "화면이 이미 떠 있다"고 보고 화면을 다시 띄우지
+     * 않아, 그 호출은 알람도 화면도 없이 목록에만 남았다(마지막 호출을 확인한 직후에 온 호출).
+     */
+    @Override
+    public void finish() {
+        isRunning = false;
+        super.finish();
+    }
+
     @Override
     protected void onStop() {
         super.onStop();

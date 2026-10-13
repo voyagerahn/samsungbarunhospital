@@ -11,8 +11,8 @@ android {
         applicationId "io.voyager.samsungbarunhospital"
         minSdk 24
         targetSdk 33
-        versionCode 11
-        versionName "2026.2.2.5"
+        versionCode 12
+        versionName "2026.2.2.6"
     }
 
     buildTypes {

@@ -66,9 +66,9 @@ public final class IncomingCallHandler {
             message    = parts[1].trim();
             callId     = null;
         } else {
-            tabletName = (fromIp != null ? fromIp : fromPeerId);
-            message    = payload;
-            callId     = null;
+            // 구분자가 없는 한 줄은 이 앱이 보내는 형식이 아니다. 예전에는 이것도 호출로 받아서, 병원 망의
+            // 보안 점검 도구나 브라우저가 9999 포트에 아무 글자나 보내면 가짜 호출 알람이 울렸다.
+            return IGNORED;
         }
 
         String id = (callId != null && !callId.isEmpty()) ? callId : java.util.UUID.randomUUID().toString();

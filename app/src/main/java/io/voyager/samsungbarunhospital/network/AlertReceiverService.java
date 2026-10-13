@@ -61,16 +61,30 @@ public class AlertReceiverService extends Service {
         startForeground(1, buildServiceNotification());
     }
 
+    // 수신 루프를 시작했는지(메인 스레드에서만 접근). 예전에는 "serverSocket이 열려 있나"로 판단했는데,
+    // 소켓은 다른 스레드에서 조금 뒤에 열리므로 onStartCommand가 연달아 두 번 오면(시스템이 서비스를
+    // 재시작하는 것과 MainActivity가 서비스를 시작하는 것이 겹칠 때) 루프가 두 개 생겼다. 그러면 둘째가
+    // "포트 사용 중"으로 실패 → 3초 뒤 공용 소켓을 닫음 → 첫째가 죽고 다시 열림 → … 수신 포트가 3초마다
+    // 닫혔다 열리기를 반복해 Wi-Fi 호출이 간헐적으로 "전달 실패"가 된다.
+    private boolean receiverStarted = false;
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (serverSocket != null && !serverSocket.isClosed()) return START_STICKY;
-        new Thread(this::receiveLoop, "tcp-receiver").start();
+        if (!receiverStarted) {
+            receiverStarted = true;
+            new Thread(this::receiveLoop, "tcp-receiver").start();
+        }
         return START_STICKY;
     }
 
+    /** 수신 루프. 한 번에 하나만 돈다 — 실패하면 자기 소켓만 닫고 3초 뒤 스스로 다시 시작한다. */
     private void receiveLoop() {
+        ServerSocket socket = null;
         try {
-            serverSocket = new ServerSocket(TcpSender.PORT);
+            socket = new ServerSocket();
+            socket.setReuseAddress(true); // 재시작 직후에도 같은 포트를 바로 다시 열 수 있게
+            socket.bind(new java.net.InetSocketAddress(TcpSender.PORT));
+            serverSocket = socket;
             // 포트가 실제로 열린 뒤에만 광고해야, 검색으로 찾은 IP에 바로 접속이 된다.
             // 이름은 이 시점의 태블릿 이름 — 관리자가 이름을 바꾸면 앱/서비스 재시작 후 반영된다.
             if (nsdRegistration == null) {
@@ -78,16 +92,21 @@ public class AlertReceiverService extends Service {
                         AppSettings.getTabletName(getApplicationContext()), TcpSender.PORT);
             }
             while (running) {
-                Socket client = serverSocket.accept();
+                Socket client = socket.accept();
                 new Thread(() -> handleClient(client), "tcp-client").start();
             }
         } catch (Exception e) {
-            if (running) {
-                mainHandler.postDelayed(() -> {
-                    closeSocket();
-                    new Thread(this::receiveLoop, "tcp-receiver-retry").start();
-                }, 3000);
+            // 아래 finally에서 정리 후 재시작
+        } finally {
+            if (socket != null) {
+                try { socket.close(); } catch (Exception ignored) {}
             }
+            if (serverSocket == socket) serverSocket = null;
+        }
+        if (running) {
+            mainHandler.postDelayed(() -> {
+                if (running) new Thread(this::receiveLoop, "tcp-receiver-retry").start();
+            }, 3000);
         }
     }
 

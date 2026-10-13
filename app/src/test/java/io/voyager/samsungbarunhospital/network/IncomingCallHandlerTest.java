@@ -142,4 +142,15 @@ public class IncomingCallHandlerTest {
         }
         return false;
     }
+
+    @Test
+    public void payloadWithoutSeparatorIsNotACall() {
+        // 병원 망의 점검 도구·브라우저 등이 수신 포트에 아무 글자나 보내도 가짜 호출이 되면 안 된다.
+        int before = CallQueue.getInstance().getAll().size();
+
+        IncomingCallHandler.Result result = IncomingCallHandler.parseAndApply("GET / HTTP/1.1", "10.0.0.7", null);
+
+        assertEquals(IncomingCallHandler.Kind.IGNORED, result.kind);
+        assertEquals(before, CallQueue.getInstance().getAll().size());
+    }
 }

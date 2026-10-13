@@ -89,6 +89,28 @@ public class MainActivity extends AppCompatActivity {
         // 블루투스로 보낸 호출의 전달 결과 — Wi-Fi 경로가 ACK 응답으로 "전달되었습니다/전달 실패"를
         // 알려주는 것과 같은 역할. 환자가 다른 앱(유튜브 등)을 보고 있는 동안에도 받아야 하므로
         // onResume/onPause가 아니라 Activity 수명 전체에 걸어둔다.
+        // 간호사 확인(CONFIRMED) 수신. 예전에는 onResume~onPause 동안에만 받아서, 환자가 유튜브 등 다른 앱을
+        // 보는 동안 간호사가 확인하면 그 응답이 버려지고 돌아왔을 때도 계속 "대기 중"으로 남았다.
+        AlertReceiverService.setConfirmListener((tabletName, message) -> {
+            // 메시지 일치하는 첫 번째 항목 제거 (간호사 CONFIRMED 패킷은 UUID 없이 메시지만 포함)
+            int idx = activeCallMsgs.indexOf(message);
+            if (idx >= 0) {
+                // 간호사가 확인했으니 이 호출은 더 보낼 필요가 없다(수신 확인을 못 받아 재전송 중이었더라도).
+                String confirmedId = activeCallIds.get(idx);
+                BleMeshManager.stopCall(confirmedId);
+                deliveredCallIds.remove(confirmedId);
+                activeCallIds.remove(idx);
+                activeCallMsgs.remove(idx);
+            }
+            confirmedMessages.add(message);
+            refreshCallBanner();
+            // 2초 후 완료 항목도 제거
+            bannerHandler.postDelayed(() -> {
+                confirmedMessages.remove(message);
+                refreshCallBanner();
+            }, 2000);
+        });
+
         BleMeshManager.setDeliveryListener(new BleMeshManager.DeliveryListener() {
             @Override public void onCallDelivered(String callId) {
                 runOnUiThread(() -> onBleCallDelivered(callId));
@@ -172,36 +194,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         loadButtons();
-        AlertReceiverService.setConfirmListener((tabletName, message) -> {
-            // 메시지 일치하는 첫 번째 항목 제거 (간호사 CONFIRMED 패킷은 UUID 없이 메시지만 포함)
-            int idx = activeCallMsgs.indexOf(message);
-            if (idx >= 0) {
-                // 간호사가 확인했으니 이 호출은 더 보낼 필요가 없다(수신 확인을 못 받아 재전송 중이었더라도).
-                String confirmedId = activeCallIds.get(idx);
-                BleMeshManager.stopCall(confirmedId);
-                deliveredCallIds.remove(confirmedId);
-                activeCallIds.remove(idx);
-                activeCallMsgs.remove(idx);
-            }
-            confirmedMessages.add(message);
-            refreshCallBanner();
-            // 2초 후 완료 항목도 제거
-            bannerHandler.postDelayed(() -> {
-                confirmedMessages.remove(message);
-                refreshCallBanner();
-            }, 2000);
-        });
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        AlertReceiverService.setConfirmListener(null);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        AlertReceiverService.setConfirmListener(null);
         BleMeshManager.setDeliveryListener(null);
         // 메시지 큐에 남은 지연 콜백 제거 — Activity 참조 누수 방지
         bannerHandler.removeCallbacksAndMessages(null);
@@ -375,7 +373,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // TCP 전송: 여러 간호사 태블릿에 동시 전송, ACK 확인
-    private void sendCallMessage(String message) {
+    private static String sanitizeField(String s) {
+        return s == null ? "" : s.replace('|', '/').replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private void sendCallMessage(String rawMessage) {
         List<String> targets = AppSettings.getNurseIps(this);
         List<BleOnlyNurse> bleOnlyNurses = AppSettings.getBleOnlyNurses(this);
         if (targets.isEmpty() && bleOnlyNurses.isEmpty()) {
@@ -383,7 +385,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        String tabletName = AppSettings.getTabletName(this);
+        // 전송 형식이 "이름|메시지|호출ID" 한 줄이라, 이름·메시지에 구분자나 줄바꿈이 들어 있으면 받는 쪽이
+        // 잘못 나눈다. 보낼 때 바꿔 둔다(간호사 확인응답과의 대조도 바꾼 메시지로 한다).
+        final String message = sanitizeField(rawMessage);
+        String tabletName = sanitizeField(AppSettings.getTabletName(this));
         // 환자 측에서 UUID 생성 → payload에 포함 → 취소 시 1:1 매칭 가능
         String callId  = java.util.UUID.randomUUID().toString();
         String payload = tabletName + "|" + message + "|" + callId;
