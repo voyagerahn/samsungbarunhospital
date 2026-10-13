@@ -32,9 +32,9 @@ import kotlinx.coroutines.launch
  * monitoring and duty-cycling — kept MTU negotiation and backoff retry on scan failure.
  *
  * Self-healing (added after a field report of "works after boot, then 0 connections until
- * reboot"): the scan is restarted periodically ([refreshScanIfDue]) because Android silently stops
- * delivering results for a scan left running for 30+ minutes, which made a dropped link
- * unrecoverable; connection attempts back off per address; and a peer that is already linked
+ * reboot"): the scan is renewed before Android's 30-minute scan limit ([renewScan]) and right when
+ * a link is lost ([onLinkLost]) — a scan left running forever silently stops delivering results,
+ * which made a dropped link unrecoverable; connection attempts back off per address; and a peer that is already linked
  * (in either direction, or under an older advertising address) isn't connected again.
  *
  * Who to connect to is decided by [BleConnectPolicy]: registered nurses always get a slot first;
@@ -62,7 +62,8 @@ class BleGattClientManager(
     @Volatile private var isActive = false
     @Volatile private var isScanning = false
     @Volatile private var scanStartedAt = 0L
-    private var healthJob: Job? = null
+    private var renewJob: Job? = null
+    private var linkLostRenewJob: Job? = null
 
     // 연속 스캔 실패 횟수. startScan()이 예외 없이 반환해도 실패는 나중에 onScanFailed로 오므로,
     // 거기서 0으로 되돌리면 안 된다(그러면 재시도 간격이 영영 안 늘어나 3초마다 반복되고, Android의
@@ -104,12 +105,12 @@ class BleGattClientManager(
         }
         isActive = true
         startScanning()
-        healthJob?.cancel()
-        healthJob = scope.launch {
+        renewJob?.cancel()
+        renewJob = scope.launch {
             while (true) {
-                delay(BleMeshConstants.SCAN_HEALTH_CHECK_INTERVAL_MS)
+                delay(BleMeshConstants.SCAN_RENEW_INTERVAL_MS)
                 if (!this@BleGattClientManager.isActive) break
-                refreshScanIfDue()
+                renewScan()
             }
         }
         return true
@@ -118,8 +119,10 @@ class BleGattClientManager(
     @Suppress("MissingPermission")
     fun stop() {
         isActive = false
-        healthJob?.cancel()
-        healthJob = null
+        renewJob?.cancel()
+        renewJob = null
+        linkLostRenewJob?.cancel()
+        linkLostRenewJob = null
         stopScanning()
         pendingConnections.clear()
         clientPeerIds.clear()
@@ -132,25 +135,31 @@ class BleGattClientManager(
     }
 
     /**
-     * 스캔을 주기적으로 새로 시작한다. 이유는 [BleMeshConstants.SCAN_REFRESH_INTERVAL_MS] 주석 참고 —
-     * 한 번 시작하고 내버려둔 스캔은 30분 뒤부터 결과를 주지 않아, 끊긴 상대를 재부팅 전까지 못 찾는다.
+     * 스캔을 새로 시작한다. 이유는 [BleMeshConstants.SCAN_RENEW_INTERVAL_MS] 주석 참고 — 한 번 시작하고
+     * 내버려둔 스캔은 30분 뒤부터 결과를 주지 않아, 끊긴 상대를 재부팅 전까지 못 찾는다.
      */
-    private suspend fun refreshScanIfDue() {
-        if (!isScanning) {
-            // 실패 후 재시도 대기 중이거나, 재시도가 어떤 이유로 끊긴 상태 — 직접 다시 건다.
-            startScanning()
-            return
+    private suspend fun renewScan() {
+        if (isScanning) {
+            // 실패는 startScan 직후 onScanFailed로 오므로, 여기까지 살아있었으면 정상 동작으로 본다.
+            if (System.currentTimeMillis() - scanStartedAt >= 30_000L) scanFailureStreak = 0
+            stopScanning()
+            delay(1000)
         }
-        val age = System.currentTimeMillis() - scanStartedAt
-        // 실패는 startScan 직후 onScanFailed로 오므로, 30초 넘게 살아있으면 정상 동작으로 본다.
-        if (age >= 30_000L) scanFailureStreak = 0
-        val alone = connectionManager.count() == 0
-        val due = age >= BleMeshConstants.SCAN_REFRESH_INTERVAL_MS ||
-            (alone && age >= BleMeshConstants.SCAN_REFRESH_WHEN_ALONE_MS)
-        if (!due) return
-        stopScanning()
-        delay(1000)
         startScanning()
+    }
+
+    /**
+     * 연결이 끊겼을 때. 그때가 상대를 다시 찾아야 하는 순간이므로, 돌던 스캔이 오래된 것이면 새로 시작한다
+     * (방금 시작한 스캔이면 그대로 둔다 — startScan은 30초에 5회 제한이 있다).
+     */
+    fun onLinkLost() {
+        if (!isActive) return
+        if (isScanning && System.currentTimeMillis() - scanStartedAt < BleMeshConstants.SCAN_RENEW_ON_LINK_LOST_MIN_AGE_MS) return
+        linkLostRenewJob?.cancel()
+        linkLostRenewJob = scope.launch {
+            delay(1000) // 여러 링크가 한꺼번에 끊길 때 한 번으로 합친다
+            if (this@BleGattClientManager.isActive) renewScan()
+        }
     }
 
     @Synchronized
@@ -260,7 +269,7 @@ class BleGattClientManager(
         val decision = BleConnectPolicy.decide(
             isRegisteredNurse = peerIdHex != null && peerIdHex in nurses,
             linkCount = connectionManager.count() + pendingConnections.size,
-            maxLinks = BleMeshConstants.MAX_CONNECTIONS,
+            maxLinks = connectionManager.maxLinks,
             unlinkedNurseCount = nurses.count { it != peerIdHex && !connectionManager.isPeerLinked(it) && !clientPeerIds.containsValue(it) },
             hasEvictable = evictable != null
         )
@@ -302,8 +311,14 @@ class BleGattClientManager(
         val delayMs = (BleMeshConstants.CONNECT_RETRY_BACKOFF_BASE_MS shl (failures - 1).coerceAtMost(4))
             .coerceAtMost(maxMs)
         connectBackoff[address] = ConnectBackoff(failures, System.currentTimeMillis() + delayMs)
+        val links = connectionManager.count()
         if (failures == 1 || failures % 10 == 0) {
-            DiagLog.log("BLE연결", "…${address.takeLast(5)} 연결 실패 ${failures}회 연속 (status=$status), ${delayMs / 1000}초 뒤 재시도")
+            DiagLog.log("BLE연결", "…${address.takeLast(5)} 연결 실패 ${failures}회 연속: 오류코드 $status (${BleStatusText.gattStatus(status)}) — 현재 연결 ${links}대, ${delayMs / 1000}초 뒤 재시도")
+        }
+        if (status == BleStatusText.HCI_CONNECTION_LIMIT_EXCEEDED &&
+            connectionManager.markSaturated(links, explicitLimit = true)
+        ) {
+            DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links}대로 판단 — 연결이 하나 줄 때까지 더 연결하지 않음")
         }
     }
 
@@ -343,7 +358,9 @@ class BleGattClientManager(
                     if (connectionManager.get(device.address)?.gatt === gatt) {
                         connectionManager.remove(device.address)
                     }
-                    delegate.onDeviceDisconnected(device.address)
+                    // 실제로 맺어졌던 링크가 끊긴 경우만 "연결 끊김" 사건으로 알린다 — 그 사건이 스캔·광고를 새로
+                    // 시작하는 계기라서, 실패한 연결 시도까지 알리면 시도할 때마다 그것들이 다시 시작된다.
+                    if (established) delegate.onDeviceDisconnected(device.address)
                     scope.launch {
                         delay(200)
                         try { gatt.close() } catch (_: Exception) {}

@@ -73,7 +73,10 @@ class BleConnectionManager {
     fun remove(address: String): BleConnection? {
         // Connection is gone — any write we were waiting to have acked on it never will be.
         pendingWriteAcks.remove(address)?.complete(Unit)
-        return connections.remove(address)
+        val removed = connections.remove(address)
+        // 링크가 줄어 자리가 났으면 포화 상태가 풀린다.
+        if (saturatedAt >= 0 && connections.size < saturatedAt) saturatedAt = -1
+        return removed
     }
 
     fun get(address: String): BleConnection? = connections[address]
@@ -106,7 +109,35 @@ class BleConnectionManager {
     fun isPeerLinked(peerIdHex: String): Boolean =
         connections.values.any { it.peerIdHex == peerIdHex && it.isWritable }
 
-    fun isFull(): Boolean = connections.size >= BleMeshConstants.MAX_CONNECTIONS
+    // 칩이 "더 못 받는다"는 신호를 준 순간의 링크 수(-1 = 그런 상태 아님). 링크가 그보다 줄면 풀린다.
+    @Volatile private var saturatedAt = -1
+
+    /** 지금 적용되는 링크 수 한도 — 고정값이 아니라 칩의 현재 상태에서 나온다([BleLinkLimit]). */
+    val maxLinks: Int get() = BleLinkLimit.effective(saturatedAt)
+
+    /** 포화 상태로 표시된 링크 수(아니면 -1). */
+    fun saturatedAt(): Int = saturatedAt
+
+    /** 칩이 알려준 한도만큼 지금 다 차 있는지 — "더 추가할 수 없음" 안내용. */
+    fun isSaturated(): Boolean = saturatedAt.let { it >= 0 && connections.size >= it }
+
+    /**
+     * 칩의 거부 신호를 반영한다.
+     * @return 이번에 새로 포화 상태가 됐으면 true(기록용)
+     */
+    fun markSaturated(linkCount: Int, explicitLimit: Boolean): Boolean {
+        if (!BleLinkLimit.isLimitSignal(linkCount, explicitLimit)) return false
+        val newly = saturatedAt != linkCount
+        saturatedAt = linkCount
+        return newly
+    }
+
+    /** 칩이 다시 받아줄 수 있다는 증거가 생겼을 때(광고가 켜짐). */
+    fun clearSaturation() {
+        saturatedAt = -1
+    }
+
+    fun isFull(): Boolean = connections.size >= maxLinks
 
     fun isDeviceConnected(address: String): Boolean = connections.containsKey(address)
 
@@ -114,6 +145,7 @@ class BleConnectionManager {
         pendingWriteAcks.values.forEach { it.complete(Unit) }
         pendingWriteAcks.clear()
         connections.clear()
+        saturatedAt = -1
     }
 
     /**

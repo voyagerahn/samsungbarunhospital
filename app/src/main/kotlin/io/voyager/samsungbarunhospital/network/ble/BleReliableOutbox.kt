@@ -102,6 +102,20 @@ class BleReliableOutbox(
         return due
     }
 
+    /**
+     * 다음에 할 일이 생길 때까지 남은 시간(ms). 닿을 수 있는 항목은 다음 재전송 시각, 닿을 수 없는 항목은
+     * 만료 시각까지 — 그 사이에는 깨어날 이유가 없다(닿게 되면 호출부가 따로 깨운다). 비어 있으면 null.
+     */
+    @Synchronized
+    fun nextWakeDelayMs(isReachable: (recipientHex: String) -> Boolean): Long? {
+        if (entries.isEmpty()) return null
+        val now = clock()
+        return entries.values.minOf { entry ->
+            val at = if (isReachable(entry.recipientHex)) minOf(entry.nextSendAt, entry.expiresAt) else entry.expiresAt
+            (at - now).coerceAtLeast(0L)
+        }
+    }
+
     @Synchronized
     fun isEmpty(): Boolean = entries.isEmpty()
 

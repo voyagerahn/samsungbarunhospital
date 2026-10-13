@@ -33,8 +33,6 @@ object BleMeshConstants {
     // 재전송 간격: 1초, 2초, 4초, 8초, 이후 10초마다.
     const val RESEND_BASE_DELAY_MS = 1_000L
     const val RESEND_MAX_DELAY_MS = 10_000L
-    // 재전송할 것이 있는지 살피는 주기(대기 중인 메시지가 있을 때만 돈다).
-    const val OUTBOX_TICK_MS = 1_000L
     // 확인을 기다리는 메시지 수 상한. 간호사와 끊긴 채 벨을 계속 눌러도 메모리와 재전송량이 무한정
     // 늘지 않게 한다 — 넘치면 가장 오래된 것부터 포기한다.
     const val OUTBOX_MAX_ENTRIES = 50
@@ -58,14 +56,14 @@ object BleMeshConstants {
     const val GATT_MTU_REQUEST = 517
     const val SCAN_RESTART_BACKOFF_BASE_MS = 3_000L
     const val SCAN_RESTART_BACKOFF_MAX_MS = 30_000L
-    // Android 7+는 30분 넘게 계속 도는 스캔을 "opportunistic"으로 강등해 결과를 주지 않는다 —
-    // 한 번 시작하고 내버려두면 앱 시작 30분 뒤부터는 끊긴 상대를 다시 찾지 못한다(재부팅 전까지
-    // 연결 0대). 그 전에 주기적으로 스캔을 새로 시작한다. 연결이 하나도 없을 때는 더 자주 —
-    // 일부 기기에서 스캔이 조용히 멈추는 경우의 자가 복구. (startScan은 30초에 5회 제한이 있어
-    // 이 값들은 그보다 충분히 길어야 한다.)
-    const val SCAN_HEALTH_CHECK_INTERVAL_MS = 60 * 1000L
-    const val SCAN_REFRESH_INTERVAL_MS = 10 * 60 * 1000L
-    const val SCAN_REFRESH_WHEN_ALONE_MS = 2 * 60 * 1000L
+    // Android 7+는 30분 넘게 계속 도는 스캔을 "opportunistic"으로 강등해 결과를 주지 않는다 — 한 번 시작하고
+    // 내버려두면 앱 시작 30분 뒤부터는 끊긴 상대를 다시 찾지 못한다(재부팅 전까지 연결 0대). 그래서 그 한계
+    // 안에서 스캔을 새로 시작한다. **플랫폼 제약 때문에 남겨둔 유일한 "시계 기반" 동작**이고, 그 밖의 복구는
+    // 전부 사건(연결 끊김·연결됨·블루투스 켜짐) 기준이다. startScan은 30초에 5회 제한이 있어 충분히 길어야 한다.
+    const val SCAN_RENEW_INTERVAL_MS = 10 * 60 * 1000L
+    // 연결이 끊긴 순간에는 스캔을 바로 새로 시작한다(그때가 상대를 다시 찾아야 하는 순간). 단, 방금 시작한
+    // 스캔이면 그대로 둔다.
+    const val SCAN_RENEW_ON_LINK_LOST_MIN_AGE_MS = 60 * 1000L
 
     // 연결 실패 직후 다음 스캔 결과에서 곧바로 재시도하면 초당 여러 번 connectGatt가 반복되어
     // 블루투스 스택이 불안정해진다. 주소별로 5s, 10s, 20s … 최대 60s 간격을 둔다.
@@ -74,15 +72,6 @@ object BleMeshConstants {
     // 등록된 간호사 태블릿은 끊겨도 계속 붙어야 하므로 재시도 간격 상한을 짧게 둔다.
     const val CONNECT_RETRY_BACKOFF_MAX_NURSE_MS = 15_000L
 
-
-    // 연결이 하나도 없는 채로 이 시간이 지나면 광고를 새로 시작한다(광고가 조용히 멈춘 경우 대비).
-    const val ADVERTISE_REFRESH_WHEN_ALONE_MS = 5 * 60 * 1000L
-
-    // 광고 시작을 칩이 거부한 경우(표준 코드 1~5가 아닌 값) 다시 시도하는 간격. 거부된 상태에서 몇 초마다
-    // 계속 시도하면 이미 맺은 연결을 불안하게 만들 수 있어 길게 둔다. 연결이 하나라도 줄면 그 전에 다시 시도한다.
-    const val ADVERTISE_REFUSED_RETRY_MS = 5 * 60 * 1000L
-    // 연결이 하나도 없는데 거부된 경우(연결 시도 중이었던 등 일시적 상태)는 더 빨리 다시 시도한다.
-    const val ADVERTISE_REFUSED_RETRY_IDLE_MS = 60 * 1000L
 
     const val ADVERTISE_RESTART_BACKOFF_BASE_MS = 3_000L
     const val ADVERTISE_RESTART_BACKOFF_MAX_MS = 30_000L

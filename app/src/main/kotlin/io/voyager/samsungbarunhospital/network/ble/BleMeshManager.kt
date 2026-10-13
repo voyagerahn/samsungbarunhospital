@@ -109,6 +109,20 @@ object BleMeshManager {
     @JvmStatic
     fun getWritableConnectionCount(): Int = connectionManager.writableCount()
 
+    // ── 연결 수 한도 (BleLinkLimit / BleConnectionManager의 포화 상태) ─────────
+
+    /** 지금 적용 중인 한도 — 진단 표시용. */
+    @JvmStatic
+    fun getMaxLinks(): Int = connectionManager.maxLinks
+
+    /** 칩이 알려준 한도(지금 포화 상태일 때만). 아니면 0 — 진단 표시용. */
+    @JvmStatic
+    fun getObservedLinkLimit(): Int = connectionManager.saturatedAt().coerceAtLeast(0)
+
+    /** 칩이 알려준 한도만큼 지금 다 차 있는지 — "더 추가할 수 없음" 안내용. */
+    @JvmStatic
+    fun isLinkLimitReached(): Boolean = connectionManager.isSaturated()
+
     /** 연결 중 이 태블릿이 건 것의 수(나머지는 상대가 걸어온 것) — 진단용. */
     @JvmStatic
     fun getOutgoingConnectionCount(): Int = connectionManager.all().count { it.isClient }
@@ -143,6 +157,7 @@ object BleMeshManager {
         val appContext = context.applicationContext
         this.appContext = appContext
 
+
         val transportDelegate = object : BleTransportDelegate {
             override fun onRawPacketReceived(bytes: ByteArray, fromAddress: String) {
                 // GATT 콜백 스레드(Binder)에서 곧장 호출되므로, dedup/relay(추가 GATT
@@ -158,8 +173,14 @@ object BleMeshManager {
                     delay(200)
                     sendPacket(buildAnnouncePacket(), excludeAddress = null)
                 }
+                serverManager?.onLinkGained()
+                wakeOutbox() // 기다리던 메시지가 이제 나갈 수 있을지도 모른다
             }
-            override fun onDeviceDisconnected(address: String) {}
+            override fun onDeviceDisconnected(address: String) {
+                // 복구는 시계가 아니라 이 사건이 계기다: 끊긴 순간 다시 찾고(스캔), 다시 찾을 수 있게 한다(광고).
+                clientManager?.onLinkLost()
+                serverManager?.onLinkLost()
+            }
         }
 
         val peers = BlePeerManager(mainScope) { peerIdHex -> onPeerCameOnline(peerIdHex) }
@@ -280,6 +301,7 @@ object BleMeshManager {
         val frames = BleFragmentation.fragment(packet).map { it.encode() }
         val dropped = outbox.add(packet.messageId.toHex(), recipientHex, frames, outboxKey(type, callId, recipientHex), what)
         for (entry in dropped) giveUp(entry, "확인을 기다리는 메시지가 너무 많아 가장 오래된 것부터 포기")
+        wakeOutbox()
 
         // 기록은 실패 이벤트만 남긴다.
         if (!started) {
@@ -309,10 +331,19 @@ object BleMeshManager {
         connectionManager.isPeerLinked(peerIdHex) ||
             (peerManager?.isOnline(peerIdHex) == true && connectionManager.writableCount() > 0)
 
+    // 재전송 루프를 깨우는 신호. 받는 기기에 닿을 수 있게 되는 사건(연결됨·누구인지 확인됨·다시 감지됨)이나
+    // 새 메시지가 들어왔을 때 보낸다.
+    private val outboxSignal = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+
+    private fun wakeOutbox() {
+        outboxSignal.trySend(Unit)
+    }
+
     /**
-     * 확인을 기다리는 메시지가 있는 동안에만 도는 재전송 루프. 목록이 비면 스스로 끝나고, 다음 메시지가
-     * 들어올 때 다시 시작된다 — 보낼 것이 없을 때는 아무것도 돌지 않는다. BLE가 꺼지면([stop]) 멈추고,
-     * 다시 켜질 때([start]) 남은 것이 있으면 이어서 돈다.
+     * 확인을 기다리는 메시지가 있는 동안에만 도는 재전송 루프. 주기적으로 깨어나 살피지 않는다 — 다음에 할 일이
+     * 있는 시각(다음 재전송 또는 만료)까지 자고, 그 전에 상황이 바뀌면 [wakeOutbox]로 깨운다. 받는 기기에
+     * 닿을 수 없는 동안은 닿게 되는 사건이 올 때까지 아무것도 하지 않는다. 목록이 비면 스스로 끝나고, BLE가
+     * 꺼지면([stop]) 멈췄다가 다시 켜질 때([start]) 남은 것이 있으면 이어서 돈다.
      */
     private fun ensureOutboxLoop() {
         synchronized(outboxLock) {
@@ -320,13 +351,12 @@ object BleMeshManager {
             outboxJob = mainScope.launch {
                 while (true) {
                     pumpOutbox()
-                    synchronized(outboxLock) {
-                        if (outbox.isEmpty() || !started) {
-                            outboxJob = null
-                            return@launch
-                        }
-                    }
-                    delay(BleMeshConstants.OUTBOX_TICK_MS)
+                    val waitMs = synchronized(outboxLock) {
+                        val next = if (started) outbox.nextWakeDelayMs { isReachable(it) } else null
+                        if (next == null) outboxJob = null
+                        next
+                    } ?: return@launch
+                    kotlinx.coroutines.withTimeoutOrNull(waitMs.coerceAtLeast(50L)) { outboxSignal.receive() }
                 }
             }
         }
@@ -473,6 +503,7 @@ object BleMeshManager {
         if (packet.type == BlePacketType.ANNOUNCE && packet.ttl == BleMeshConstants.DEFAULT_TTL) {
             connectionManager.bindPeer(fromAddress, senderHex)
             trimDuplicateLinks(senderHex)
+            wakeOutbox() // 이 링크가 누구와의 것인지 알게 됐다 — 그 기기를 기다리던 메시지를 보낼 수 있다
         }
         // 나에게 온 호출·취소·확인응답이면, 이미 받은 것의 재전송이더라도 수신 확인은 매번 돌려준다 —
         // 앞서 보낸 확인이 중간에 사라졌을 수 있고, 확인을 못 받은 상대는 계속 다시 보내기 때문.
@@ -556,7 +587,7 @@ object BleMeshManager {
     }
 
     private fun onPeerCameOnline(peerIdHex: String) {
-        // 기다리던 메시지는 재전송 루프(1초 주기)가 곧 내보낸다 — 여기서 따로 할 일은 없다.
+        wakeOutbox() // (중계를 거쳐서라도) 다시 감지됐다 — 그 기기를 기다리던 메시지를 보낼 수 있다
     }
 
     private fun buildAnnouncePacket(): BlePacket {

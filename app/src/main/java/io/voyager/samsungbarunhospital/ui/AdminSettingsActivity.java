@@ -677,7 +677,13 @@ public class AdminSettingsActivity extends AppCompatActivity {
                                 .setNegativeButton("취소", null)
                                 .show()));
             }
-            if (!any) listContainer.addView(buildEmptyLabel("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요..."));
+            if (!any) {
+                listContainer.addView(buildEmptyLabel("근처에 감지된 기기가 없습니다. 잠시만 기다려주세요..."));
+                // 한도가 찬 태블릿은 신호를 내지 못해 검색에 나타나지 않는다 — 계속 안 뜨면 그 가능성을 알려준다.
+                listContainer.addView(buildEmptyLabel(BleMeshManager.isLinkLimitReached()
+                        ? "\n이 태블릿이 이미 최대 대수와 연결되어 있어 더 추가할 수 없습니다."
+                        : "\n계속 나타나지 않으면: 찾으려는 태블릿이 이미 최대 대수와 연결되어 더 추가할 수 없는 상태일 수 있습니다. 그 태블릿의 관리자 설정 → 진단에서 확인하세요."));
+            }
             handler.postDelayed(refreshRef[0], 1500);
         };
         dialog.setOnDismissListener(d -> handler.removeCallbacksAndMessages(null));
@@ -868,6 +874,12 @@ public class AdminSettingsActivity extends AppCompatActivity {
         tvPreviewCallMsg  .setTextSize(szCallMsg);
     }
 
+    /** 연결 한도가 찼을 때의 안내 — 더 추가할 수 없다는 것을 분명히 알린다. */
+    private static String linkLimitReachedText(int limit) {
+        return "이 태블릿은 블루투스로 최대 " + limit + "대까지 연결됩니다. 지금 " + limit
+                + "대가 모두 연결되어 있어 태블릿을 더 추가할 수 없습니다. (이미 연결된 태블릿의 호출은 정상입니다)";
+    }
+
     /** 관리자가 현장에서 "왜 근거리 통신이 안 되지?"를 스스로 판단할 수 있게 하는 가벼운 진단 패널. */
     private void refreshBleStatus() {
         BleMode mode = BleMeshManager.getMode(getApplicationContext());
@@ -888,12 +900,17 @@ public class AdminSettingsActivity extends AppCompatActivity {
             boolean btOn = BleMeshManager.isBluetoothEnabled(getApplicationContext());
             sb.append("블루투스: ").append(btOn ? "켜짐" : "꺼짐").append("\n");
             sb.append("서비스 실행 중: ").append(BleMeshManager.isRunning() ? "예" : "아니오").append("\n");
-            sb.append("현재 연결된 기기: ").append(connections).append("대\n");
+            int linkLimit = BleMeshManager.getObservedLinkLimit();
+            sb.append("현재 연결된 기기: ").append(connections).append("대");
+            if (linkLimit > 0) sb.append(" (이 태블릿은 최대 ").append(linkLimit).append("대)");
+            sb.append("\n");
 
             sb.append("최근 통신: ").append(lastActivity == 0L ? "아직 없음" : formatAgo(lastActivity));
 
             if (!btOn) {
                 sb.append("\n\n⚠ 블루투스가 꺼져 있어 근거리 통신으로 호출을 주고받을 수 없습니다. 기기 설정에서 블루투스를 켜주세요.");
+            } else if (BleMeshManager.isLinkLimitReached()) {
+                sb.append("\n\n⚠ ").append(linkLimitReachedText(linkLimit));
             } else if (connections == 0) {
                 sb.append("\n\n⚠ 주변에 연결된 태블릿이 없습니다. 거리가 너무 멀거나 벽 등의 장애물이 있거나, 상대 기기의 블루투스가 꺼져 있을 수 있습니다.");
             }
@@ -956,10 +973,10 @@ public class AdminSettingsActivity extends AppCompatActivity {
         sb.append("다른 태블릿이 이 태블릿을 찾을 수 있음: ").append(adv).append('\n');
         if (mode == BleMode.FULL && Boolean.FALSE.equals(advHw)) {
             warnings.add("이 태블릿은 기기 특성상 다른 태블릿이 먼저 찾아올 수 없습니다 — 이 태블릿이 상대를 찾아가 연결해야 하므로, 상대 태블릿은 '찾을 수 있음: 예'인 기기여야 합니다.");
+        } else if (running && BleMeshManager.isLinkLimitReached()) {
+            warnings.add(linkLimitReachedText(BleMeshManager.getObservedLinkLimit()));
         } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && advRefused) {
-            warnings.add("이 태블릿의 블루투스가 동시에 연결할 수 있는 수(지금 " + links + "대)가 가득 찬 것으로 보입니다. "
-                    + "이미 연결된 태블릿의 호출은 정상이지만, 지금은 새 태블릿이 이 태블릿을 찾아 연결할 수 없습니다. "
-                    + "나머지 태블릿은 가까운 다른 태블릿을 거쳐(중계) 연결되어야 합니다.");
+            warnings.add("지금은 다른 태블릿이 이 태블릿을 찾아 연결할 수 없습니다(블루투스가 거부함). 이미 연결된 태블릿의 호출은 정상입니다.");
         } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && !BleMeshManager.isAdvertising()) {
             warnings.add("다른 태블릿이 이 태블릿을 찾을 수 없는 상태입니다 — 블루투스를 껐다 켜보세요.");
         }
@@ -967,6 +984,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
         int outgoing = BleMeshManager.getOutgoingConnectionCount();
         sb.append("연결된 기기: ").append(links).append("대");
         if (links > 0) sb.append(" (이 태블릿이 건 연결 ").append(outgoing).append(", 걸려온 연결 ").append(links - outgoing).append(')');
+        int observedLimit = BleMeshManager.getObservedLinkLimit();
+        if (observedLimit > 0) sb.append(" / 이 태블릿의 최대 ").append(observedLimit).append("대");
         sb.append('\n');
         if (running && links == 0) warnings.add("연결된 기기가 0대입니다 — 상대 태블릿이 너무 멀거나, 블루투스가 꺼져 있거나, 앱이 꺼져 있을 수 있습니다. 앱이 자동으로 계속 다시 찾고 있으니 1~2분 뒤 다시 확인해보세요.");
         int scanFailures = BleMeshManager.getScanFailureStreak();

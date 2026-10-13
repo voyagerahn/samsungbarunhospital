@@ -91,4 +91,17 @@ class BleReliableOutboxTest {
         assertNull(box.ack("m1"))
         assertNotNull(box.ack("m4"))
     }
+
+    @Test
+    fun `sleeps until the next resend when reachable, and until expiry when not - never polls`() {
+        val box = outbox(timeoutMs = 30 * 60_000L)
+        assertNull(box.nextWakeDelayMs { true }) // 비어 있으면 깨어날 이유가 없다
+
+        box.add("m1", nurse, frame, "CALL:c1@$nurse", "호출")
+        assertEquals(0L, box.nextWakeDelayMs { true })        // 바로 보낼 차례
+        box.takeDue { true }
+        assertEquals(1_000L, box.nextWakeDelayMs { true })    // 다음 재전송까지
+        // 닿을 수 없으면 닿게 되는 사건이 올 때까지 할 일이 없다 — 만료 시각까지 잔다.
+        assertEquals(30 * 60_000L, box.nextWakeDelayMs { false })
+    }
 }

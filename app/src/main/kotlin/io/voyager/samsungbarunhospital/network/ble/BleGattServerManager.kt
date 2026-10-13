@@ -53,13 +53,12 @@ class BleGattServerManager(
     private var advertiseRetryCount = 0
     @Volatile private var isActive = false
     @Volatile private var advertising = false
-    @Volatile private var advertisingStartedAt = 0L
 
     // 광고 시작 실패 상태. 성공하면 모두 초기화된다.
     @Volatile private var advertiseErrorCode = 0          // 마지막 실패 코드(없으면 0)
     @Volatile private var advertiseFailureStreak = 0
-    @Volatile private var refusedAtLinkCount = -1          // 칩이 거부했을 때의 링크 수(거부 상태가 아니면 -1)
-    @Volatile private var lastAdvertiseAttemptAt = 0L
+    @Volatile private var refusedByChip = false            // 칩이 거부해서, 연결 상태가 바뀌기를 기다리는 중
+    private var linkLostRestartJob: Job? = null
 
     /** 마지막 광고 시작 실패 코드(정상이면 0) — 자가진단 표시용. */
     fun advertiseErrorCode(): Int = if (advertising) 0 else advertiseErrorCode
@@ -69,7 +68,30 @@ class BleGattServerManager(
      * 그대로 올라옴). 대표적으로 12(0x0C, Command Disallowed) — 동시에 연결할 수 있는 수가 찼을 때.
      */
     private fun isChipRefusal(code: Int) = code !in 1..5
-    private var healthJob: Job? = null
+
+    /**
+     * 연결이 끊겼을 때(우리가 건 것/걸려온 것 모두). 그때가 바로 다른 태블릿이 이 태블릿을 다시 찾을 수 있어야
+     * 하는 순간이므로 광고를 새로 시작한다 — 칩이 거부하던 상태였다면 자리가 났으니 다시 시도하는 것이고,
+     * 정상이었더라도 연결이 맺어질 때 광고가 조용히 꺼지는 기기가 있어서 확실히 켜둔다. 시계가 아니라 이
+     * 사건이 재시도의 계기다. 여러 링크가 한꺼번에 끊길 때는 한 번으로 합친다.
+     */
+    fun onLinkLost() {
+        if (!isActive) return
+        linkLostRestartJob?.cancel()
+        linkLostRestartJob = scope.launch {
+            delay(500)
+            if (!isActive) return@launch
+            stopAdvertising()
+            advertising = false
+            delay(100)
+            startAdvertising()
+        }
+    }
+
+    /** 새 연결이 맺어졌을 때. 칩이 거부하던 중이었다면(연결 시도 중이라 안 됐던 경우 등) 한 번 다시 시도한다. */
+    fun onLinkGained() {
+        if (isActive && refusedByChip && !advertising) startAdvertising()
+    }
 
     fun isAdvertising(): Boolean = advertising
 
@@ -93,30 +115,6 @@ class BleGattServerManager(
             delay(300)
             startAdvertising()
         }
-        // 연결이 하나도 없는 채로 오래 있으면 광고를 새로 시작한다 — 일부 기기에서 광고가 오류 콜백
-        // 없이 멈추는 경우가 있어, 그러면 상대가 이 기기를 다시 찾지 못한 채 연결 0대로 남는다.
-        healthJob?.cancel()
-        healthJob = scope.launch {
-            while (true) {
-                delay(BleMeshConstants.SCAN_HEALTH_CHECK_INTERVAL_MS)
-                if (!isActive) break
-                val links = connectionManager.count()
-                val alone = links == 0
-                val now = System.currentTimeMillis()
-                val age = now - advertisingStartedAt
-                if (advertising && alone && age >= BleMeshConstants.ADVERTISE_REFRESH_WHEN_ALONE_MS) {
-                    stopAdvertising()
-                    advertising = false
-                    delay(500)
-                    startAdvertising()
-                } else if (!advertising && refusedAtLinkCount >= 0) {
-                    // 칩이 거부했던 광고: 연결이 그때보다 줄었으면(자리가 났으면) 바로, 아니면 드물게만 다시 시도.
-                    val wait = if (refusedAtLinkCount == 0) BleMeshConstants.ADVERTISE_REFUSED_RETRY_IDLE_MS
-                               else BleMeshConstants.ADVERTISE_REFUSED_RETRY_MS
-                    if (links < refusedAtLinkCount || now - lastAdvertiseAttemptAt >= wait) startAdvertising()
-                }
-            }
-        }
         return true
     }
 
@@ -126,9 +124,9 @@ class BleGattServerManager(
         advertising = false
         advertiseErrorCode = 0
         advertiseFailureStreak = 0
-        refusedAtLinkCount = -1
-        healthJob?.cancel()
-        healthJob = null
+        refusedByChip = false
+        linkLostRestartJob?.cancel()
+        linkLostRestartJob = null
         stopAdvertising()
         try {
             connectionManager.all().filter { !it.isClient }.forEach { gattServer?.cancelConnection(it.device) }
@@ -160,7 +158,7 @@ class BleGattServerManager(
                     BluetoothProfile.STATE_CONNECTED -> {
                         if (connectionManager.isFull()) {
                             Log.w(TAG, "Connection cap reached, rejecting ${device.address}")
-                            DiagLog.log("BLE연결", "최대 연결 수(${BleMeshConstants.MAX_CONNECTIONS}대) 초과로 …${device.address.takeLast(5)} 연결 거부")
+                            DiagLog.log("BLE연결", "최대 연결 수(${connectionManager.maxLinks}대) 초과로 …${device.address.takeLast(5)} 연결 거부")
                             try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
                             return
                         }
@@ -296,10 +294,10 @@ class BleGattServerManager(
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
                 advertiseRetryCount = 0
                 advertising = true
-                advertisingStartedAt = System.currentTimeMillis()
                 advertiseErrorCode = 0
                 advertiseFailureStreak = 0
-                refusedAtLinkCount = -1
+                refusedByChip = false
+                connectionManager.clearSaturation() // 광고가 켜졌다 = 칩이 더 받을 수 있는 상태
                 Log.i(TAG, "Advertising started")
             }
 
@@ -316,9 +314,15 @@ class BleGattServerManager(
                     DiagLog.log("BLE노출", "다른 태블릿이 이 태블릿을 찾을 수 있게 하기 실패 ${streak}회 연속: 오류코드 $errorCode (${advertiseErrorText(errorCode)}) — 현재 연결 ${links.size}대(이 태블릿이 건 것 $outgoing, 걸려온 것 ${links.size - outgoing})")
                 }
                 if (isChipRefusal(errorCode)) {
-                    // 칩이 지금 상태에서는 안 된다고 한 것 — 몇 초마다 다시 넣지 않는다(상태 점검 루프가
-                    // 자리가 나거나 한참 지난 뒤에 다시 시도). 이미 연결된 기기들과의 통신은 그대로 된다.
-                    refusedAtLinkCount = links.size
+                    // 칩이 지금 상태에서는 안 된다고 한 것. 시계로 다시 두드리지 않는다 — 이미 연결된 기기들과의
+                    // 통신은 그대로 되고, 연결 상태가 바뀔 때(onLinkLost/onLinkGained) 다시 시도한다.
+                    refusedByChip = true
+                    if (links.isEmpty()) {
+                        // 연결이 하나도 없는데 거부된 경우는 기다릴 사건이 없으므로 일반 실패처럼 간격을 두고 재시도.
+                        scheduleAdvertiseRestart()
+                    } else if (connectionManager.markSaturated(links.size, explicitLimit = false)) {
+                        DiagLog.log("BLE연결", "이 태블릿의 블루투스 동시 연결 한도를 ${links.size}대로 판단 — 연결이 하나 줄 때까지 더 연결하지 않음")
+                    }
                 } else if (errorCode != ADVERTISE_FAILED_ALREADY_STARTED &&
                     errorCode != ADVERTISE_FAILED_DATA_TOO_LARGE &&
                     errorCode != ADVERTISE_FAILED_FEATURE_UNSUPPORTED
@@ -329,7 +333,6 @@ class BleGattServerManager(
         }
 
         try {
-            lastAdvertiseAttemptAt = System.currentTimeMillis()
             advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
         } catch (e: Exception) {
             Log.e(TAG, "Exception starting advertising: ${e.message}")
@@ -352,8 +355,7 @@ class BleGattServerManager(
         AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "이미 시작됨"
         AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "블루투스 내부 오류, 재시도함"
         AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "기기가 지원하지 않음"
-        12 -> "블루투스 칩이 지금 상태에서는 허용하지 않음 — 동시에 연결할 수 있는 기기 수가 찼을 때 주로 발생"
-        else -> "블루투스 칩이 거부함"
+        else -> BleStatusText.hci(code) ?: "블루투스 칩이 거부함"
     }
 
     private fun scheduleAdvertiseRestart() {
