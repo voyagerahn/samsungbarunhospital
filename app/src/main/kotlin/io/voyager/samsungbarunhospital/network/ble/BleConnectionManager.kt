@@ -99,6 +99,10 @@ class BleConnectionManager {
      * 쓸 수 있는 링크만 센다: 구독이 안 끝난 서버 링크를 "연결됨"으로 치면, 그 링크가 끝내 준비되지
      * 않을 때 우리 쪽에서 새로 연결하는 것까지 막아버리기 때문.
      */
+    /** [peerIdHex]와 지금 주고받을 수 있는 링크들(방향 무관). */
+    fun writableLinksTo(peerIdHex: String): List<BleConnection> =
+        connections.values.filter { it.peerIdHex == peerIdHex && it.isWritable }
+
     fun isPeerLinked(peerIdHex: String): Boolean =
         connections.values.any { it.peerIdHex == peerIdHex && it.isWritable }
 

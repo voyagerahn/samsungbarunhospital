@@ -48,8 +48,11 @@ object BleMeshConstants {
     const val STALE_PEER_TIMEOUT_MS = 60 * 1000L
     const val ANNOUNCE_INTERVAL_MS = 30 * 1000L
 
-    // Ward-scale cap, not a hard BLE stack limit (most Android stacks tolerate more) — keeps
-    // resource usage predictable without bitchat's RSSI-based eviction logic.
+    // 앱이 스스로 두는 상한. **실제 한도는 기기의 블루투스 칩이 정하며 이보다 작을 수 있다** — 현장
+    // 태블릿에서 4대 연결 상태로 광고 시작이 HCI 0x0C(Command Disallowed, 안드로이드에는 오류코드 12로
+    // 올라옴)로 계속 거부된 사례가 있다(2026-10-13). 칩이 가득 차면 새 연결도 광고도 안 되므로, 이 값에
+    // 못 미쳐도 "더 못 받는 상태"가 될 수 있다는 전제로 동작해야 한다(BleGattServerManager의 거부 처리,
+    // BleMeshManager.trimDuplicateLinks 참고).
     const val MAX_CONNECTIONS = 8
 
     const val GATT_MTU_REQUEST = 517
@@ -74,6 +77,12 @@ object BleMeshConstants {
 
     // 연결이 하나도 없는 채로 이 시간이 지나면 광고를 새로 시작한다(광고가 조용히 멈춘 경우 대비).
     const val ADVERTISE_REFRESH_WHEN_ALONE_MS = 5 * 60 * 1000L
+
+    // 광고 시작을 칩이 거부한 경우(표준 코드 1~5가 아닌 값) 다시 시도하는 간격. 거부된 상태에서 몇 초마다
+    // 계속 시도하면 이미 맺은 연결을 불안하게 만들 수 있어 길게 둔다. 연결이 하나라도 줄면 그 전에 다시 시도한다.
+    const val ADVERTISE_REFUSED_RETRY_MS = 5 * 60 * 1000L
+    // 연결이 하나도 없는데 거부된 경우(연결 시도 중이었던 등 일시적 상태)는 더 빨리 다시 시도한다.
+    const val ADVERTISE_REFUSED_RETRY_IDLE_MS = 60 * 1000L
 
     const val ADVERTISE_RESTART_BACKOFF_BASE_MS = 3_000L
     const val ADVERTISE_RESTART_BACKOFF_MAX_MS = 30_000L

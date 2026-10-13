@@ -933,8 +933,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
         boolean running = BleMeshManager.isRunning();
         int links = BleMeshManager.getConnectionCount();
 
-        sb.append("태블릿 이름: ").append(AppSettings.getTabletName(this))
-          .append(" / 내 BLE ID: ").append(AppSettings.getOrCreateBlePeerId(this).substring(0, 8)).append('\n');
+        sb.append(buildDeviceLine()).append('\n');
         sb.append("블루투스: ").append(btOn ? "켜짐" : "꺼짐").append('\n');
         if (!btOn) warnings.add("블루투스가 꺼져 있습니다 — 기기 설정에서 켜주세요.");
         sb.append("근처 기기 권한: ").append(permitted ? "허용됨" : "없음").append('\n');
@@ -946,18 +945,29 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
         Boolean advHw = BleMeshManager.isAdvertisingHardwareSupported(app);
         String adv;
+        int advError = BleMeshManager.getAdvertiseErrorCode();
+        boolean advRefused = advError != 0 && (advError < 1 || advError > 5); // 안드로이드 표준 코드(1~5)가 아니면 칩이 거부한 것
         if (mode != BleMode.FULL) adv = "아니오 (Android 7 기기)";
         else if (advHw == null) adv = "알 수 없음 (블루투스 꺼짐)";
         else if (!advHw) adv = "아니오 (이 기기가 지원하지 않음)";
-        else adv = BleMeshManager.isAdvertising() ? "예" : "아니오";
+        else if (BleMeshManager.isAdvertising()) adv = "예";
+        else if (advRefused) adv = "지금은 아니오 (블루투스 칩이 거부함 — 오류 " + advError + ")";
+        else adv = "아니오";
         sb.append("다른 태블릿이 이 태블릿을 찾을 수 있음: ").append(adv).append('\n');
         if (mode == BleMode.FULL && Boolean.FALSE.equals(advHw)) {
             warnings.add("이 태블릿은 기기 특성상 다른 태블릿이 먼저 찾아올 수 없습니다 — 이 태블릿이 상대를 찾아가 연결해야 하므로, 상대 태블릿은 '찾을 수 있음: 예'인 기기여야 합니다.");
+        } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && advRefused) {
+            warnings.add("이 태블릿의 블루투스가 동시에 연결할 수 있는 수(지금 " + links + "대)가 가득 찬 것으로 보입니다. "
+                    + "이미 연결된 태블릿의 호출은 정상이지만, 지금은 새 태블릿이 이 태블릿을 찾아 연결할 수 없습니다. "
+                    + "나머지 태블릿은 가까운 다른 태블릿을 거쳐(중계) 연결되어야 합니다.");
         } else if (mode == BleMode.FULL && Boolean.TRUE.equals(advHw) && running && !BleMeshManager.isAdvertising()) {
             warnings.add("다른 태블릿이 이 태블릿을 찾을 수 없는 상태입니다 — 블루투스를 껐다 켜보세요.");
         }
 
-        sb.append("연결된 기기: ").append(links).append("대\n");
+        int outgoing = BleMeshManager.getOutgoingConnectionCount();
+        sb.append("연결된 기기: ").append(links).append("대");
+        if (links > 0) sb.append(" (이 태블릿이 건 연결 ").append(outgoing).append(", 걸려온 연결 ").append(links - outgoing).append(')');
+        sb.append('\n');
         if (running && links == 0) warnings.add("연결된 기기가 0대입니다 — 상대 태블릿이 너무 멀거나, 블루투스가 꺼져 있거나, 앱이 꺼져 있을 수 있습니다. 앱이 자동으로 계속 다시 찾고 있으니 1~2분 뒤 다시 확인해보세요.");
         int scanFailures = BleMeshManager.getScanFailureStreak();
         sb.append("주변 기기 검색: ").append(scanFailures == 0 ? "정상" : "연속 " + scanFailures + "회 실패").append('\n');
@@ -1029,7 +1039,9 @@ public class AdminSettingsActivity extends AppCompatActivity {
                 sb.append(lines[i]).append('\n');
                 shown++;
             }
-            String display = shown == 0 ? "기록된 실패 이벤트 없음" : sb.toString();
+            // 현장에서는 이 화면을 사진으로 찍어 보내는 경우가 많다 — 사진만으로 어느 기기·어느 버전인지
+            // 알 수 있게 맨 위에 한 줄을 붙인다.
+            String display = buildDeviceLine() + "\n\n" + (shown == 0 ? "기록된 실패 이벤트 없음" : sb.toString());
             runOnUiThread(() -> tvDiagLog.setText(display));
         });
     }
@@ -1113,6 +1125,19 @@ public class AdminSettingsActivity extends AppCompatActivity {
         return caps != null
                 && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+    }
+
+    /** 앱 버전·기기·안드로이드 버전·이 태블릿의 BLE ID 한 줄. */
+    private String buildDeviceLine() {
+        String version = "?";
+        try {
+            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            version = info.versionName;
+        } catch (Exception ignored) {}
+        return "[앱 v" + version + " · " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + " · Android " + android.os.Build.VERSION.RELEASE
+                + " · " + AppSettings.getTabletName(this)
+                + " · ID " + AppSettings.getOrCreateBlePeerId(this).substring(0, 8) + "]";
     }
 
     private String buildDiagShareHeader() {

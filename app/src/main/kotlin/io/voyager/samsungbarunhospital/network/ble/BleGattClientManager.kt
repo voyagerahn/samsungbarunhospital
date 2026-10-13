@@ -288,6 +288,12 @@ class BleGattClientManager(
         }
     }
 
+    /** 우리가 건 [address] 링크를 끊는다(같은 상대와의 중복 링크 정리용). */
+    @Suppress("MissingPermission")
+    fun disconnect(address: String) {
+        try { openGatts[address]?.disconnect() } catch (_: Exception) {}
+    }
+
     /** 연결이 성립(서비스 탐색 완료)하기 전에 끝난 시도를 실패로 세고, 다음 재시도 시각을 늦춘다. */
     private fun noteConnectFailure(address: String, status: Int, isNurse: Boolean) {
         if (connectBackoff.size > 200) connectBackoff.clear() // 광고 주소가 계속 바뀌므로 무한정 쌓이지 않게

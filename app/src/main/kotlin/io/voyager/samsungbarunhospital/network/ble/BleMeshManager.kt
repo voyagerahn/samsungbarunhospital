@@ -109,6 +109,14 @@ object BleMeshManager {
     @JvmStatic
     fun getWritableConnectionCount(): Int = connectionManager.writableCount()
 
+    /** 연결 중 이 태블릿이 건 것의 수(나머지는 상대가 걸어온 것) — 진단용. */
+    @JvmStatic
+    fun getOutgoingConnectionCount(): Int = connectionManager.all().count { it.isClient }
+
+    /** "다른 태블릿이 이 태블릿을 찾을 수 있게 하기"(광고)의 마지막 실패 코드. 정상이면 0. */
+    @JvmStatic
+    fun getAdvertiseErrorCode(): Int = serverManager?.advertiseErrorCode() ?: 0
+
     /** 주변 기기 검색이 연속으로 몇 번 실패했는지(정상이면 0). */
     @JvmStatic
     fun getScanFailureStreak(): Int = clientManager?.scanFailureStreak() ?: 0
@@ -377,6 +385,25 @@ object BleMeshManager {
         callIdOfKey(entry.key)?.let { deliveryListener?.onCallDelivered(it) }
     }
 
+    /**
+     * 같은 상대와 주고받을 수 있는 링크가 둘 이상이면 하나만 남긴다. 연결 자리는 기기의 블루투스 칩이
+     * 정한 만큼뿐이라(현장 태블릿은 4대에서 가득 참) 한 쌍이 두 자리를 쓰면 그만큼 다른 태블릿이 못 붙는다.
+     * 스캔 단계에서 대부분 걸러지지만, 두 기기가 동시에 서로에게 걸면 둘 다 성립한다.
+     * - 우리가 건 링크가 여러 개(상대의 광고 주소가 바뀌어 또 연결된 경우): 가장 새것만 남긴다.
+     * - 우리가 건 것 하나 + 상대가 건 것: 양쪽이 같은 결론을 내도록 peerId가 작은 쪽이 자기가 건 링크를 끊는다.
+     */
+    private fun trimDuplicateLinks(peerIdHex: String) {
+        val links = connectionManager.writableLinksTo(peerIdHex)
+        if (links.size < 2) return
+        val mine = links.filter { it.isClient }.sortedBy { it.connectedAt }
+        val toDrop = when {
+            mine.size >= 2 -> mine.dropLast(1)
+            mine.size == 1 && myPeerId.toHex() < peerIdHex -> mine
+            else -> emptyList()
+        }
+        toDrop.forEach { clientManager?.disconnect(it.address) }
+    }
+
     private suspend fun relay(packet: BlePacket, fromAddress: String) {
         val relayed = BlePacketRelay.decideRelay(packet, myPeerId) ?: return
         connectionManager.broadcast(relayed.encode(), serverManager?.getGattServer(), serverManager?.getCharacteristic(), excludeAddress = fromAddress)
@@ -445,6 +472,7 @@ object BleMeshManager {
         // 같은 ANNOUNCE가 두 링크로 오면 나중 것은 중복으로 버려지는데, 그 링크도 기록은 해야 한다.
         if (packet.type == BlePacketType.ANNOUNCE && packet.ttl == BleMeshConstants.DEFAULT_TTL) {
             connectionManager.bindPeer(fromAddress, senderHex)
+            trimDuplicateLinks(senderHex)
         }
         // 나에게 온 호출·취소·확인응답이면, 이미 받은 것의 재전송이더라도 수신 확인은 매번 돌려준다 —
         // 앞서 보낸 확인이 중간에 사라졌을 수 있고, 확인을 못 받은 상대는 계속 다시 보내기 때문.
