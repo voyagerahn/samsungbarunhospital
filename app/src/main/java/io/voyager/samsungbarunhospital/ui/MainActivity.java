@@ -442,7 +442,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }, BLE_ACK_NOTICE_DELAY_MS);
             } else {
-                Toast.makeText(this, "간호사 태블릿과 블루투스 연결이 끊겨 있습니다.\n잠시 다시 연결해 봅니다.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "간호사 태블릿과 연결이 끊겨 있습니다.\n10초 동안 다시 시도합니다. 안 되면 다시 눌러 주세요.", Toast.LENGTH_LONG).show();
             }
         } else {
             Toast.makeText(this, "전달 실패: 간호사 태블릿에 연결할 수 없습니다." + bleUnavailableHint(), Toast.LENGTH_LONG).show();
